@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"testovoe/internal/auth"
 	"testovoe/internal/configs"
 	"testovoe/internal/database"
 	"testovoe/internal/routes"
@@ -32,7 +33,9 @@ func main() {
 		log.Println("Migrations applied successfully")
 	}
 
-	r := routes.SetupRoutes()
+	jwtService := auth.NewJWTService(cfg.JWT.Secret)
+
+	r := routes.SetupRoutes(db.GetDB(), jwtService)
 
 	addr := ":" + cfg.Server.Port
 	log.Printf("Server starting on %s", addr)

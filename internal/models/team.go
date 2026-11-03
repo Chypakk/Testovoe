@@ -23,6 +23,15 @@ type CreateTeamRequest struct {
 }
 
 type InviteRequest struct {
-	UserID uint   `json:"user_id" validate:"required"`
-	Role   string `json:"role" validate:"required,oneof=owner admin member"`
+	UserID uint   `json:"user_id"`
+	Email  string `json:"email"`
+	Role   string `json:"role"` // admin или member (owner не выдается через приглашение)
+}
+
+type TeamMemberWithUser struct {
+	TeamID    uint   `json:"team_id" db:"team_id"`
+	UserID    uint   `json:"user_id" db:"user_id"`
+	Role      string `json:"role" db:"role"`
+	UserName  string `json:"user_name" db:"name"`
+	UserEmail string `json:"user_email" db:"email"`
 }
