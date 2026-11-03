@@ -9,24 +9,31 @@ import (
 
 // UserRepo — доступ к таблице users.
 type UserRepo struct {
-	db *sql.DB
+	db  *sql.DB
+	dia *Dialect
 }
 
 func NewUserRepo(db *sql.DB) *UserRepo {
-	return &UserRepo{db: db}
+	return &UserRepo{db: db, dia: NewDialect(db)}
 }
 
 func (r *UserRepo) Create(ctx context.Context, email, passwordHash, name string) (*models.User, error) {
-	res, err := r.db.ExecContext(ctx,
-		`INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)`,
-		email, passwordHash, name)
-	if err != nil {
-		return nil, err
-	}
+	query := r.dia.Ph(`INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)`) + r.dia.ReturningID()
 
-	id, err := res.LastInsertId()
-	if err != nil {
-		return nil, err
+	var id int64
+	if r.dia.IsPostgres {
+		if err := r.db.QueryRowContext(ctx, query, email, passwordHash, name).Scan(&id); err != nil {
+			return nil, err
+		}
+	} else {
+		res, err := r.db.ExecContext(ctx, query, email, passwordHash, name)
+		if err != nil {
+			return nil, err
+		}
+		var err2 error
+		if id, err2 = res.LastInsertId(); err2 != nil {
+			return nil, err2
+		}
 	}
 
 	return r.GetByID(ctx, uint(id))
