@@ -1,0 +1,5 @@
+{
+    "go.toolsEnvVars": {},
+    "terminal.integrated.env.osx": {},
+    "go.buildOnSave": "off"
+}

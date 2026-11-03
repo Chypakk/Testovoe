@@ -10,6 +10,11 @@ import (
 )
 
 func main() {
+	// Загружаем .env (если не найден — используем переменные окружения/значения по умолчанию)
+	if err := configs.LoadDotEnv(".env"); err != nil {
+		log.Printf("Warning: failed to load .env file: %v", err)
+	}
+
 	cfg, err := configs.LoadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
