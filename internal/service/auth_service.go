@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"testovoe/internal/auth"
 	"testovoe/internal/models"
@@ -24,13 +25,26 @@ var (
 	ErrTeamNotFound       = errors.New("team not found")
 	ErrForbidden          = errors.New("forbidden")
 	ErrNotMember          = errors.New("user is not a member of this team")
+	ErrTaskNotFound       = errors.New("task not found")
+	ErrVersionConflict    = errors.New("task was modified concurrently")
 )
 
-const dupEntryErrNum = 1062
+const (
+	dupEntryErrNum    = 1062    // MySQL duplicate entry
+	pgUniqueViolation = "23505" // PostgreSQL unique_violation (SQLSTATE)
+)
 
+// isDuplicateKey определяет нарушение уникальности для обоих поддерживаемых драйверов.
 func isDuplicateKey(err error) bool {
 	var me *mysql.MySQLError
-	return errors.As(err, &me) && me.Number == dupEntryErrNum
+	if errors.As(err, &me) && me.Number == dupEntryErrNum { // MySQL 1062
+		return true
+	}
+	var pe *pgconn.PgError
+	if errors.As(err, &pe) && pe.Code == pgUniqueViolation { // PostgreSQL 23505
+		return true
+	}
+	return false
 }
 
 // AuthService — регистрация, аутентификация, выдача JWT.
