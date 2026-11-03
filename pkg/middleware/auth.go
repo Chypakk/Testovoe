@@ -1,57 +1,61 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
+
+	"github.com/go-chi/render"
+
+	"testovoe/internal/auth"
+	"testovoe/internal/models"
 )
 
+type contextKey string
+
+const userIDKey contextKey = "userID"
+
 type AuthMiddleware struct {
-	// Здесь будут зависимости: jwtService и т.д.
+	jwt *auth.JWTService
 }
 
-func NewAuthMiddleware() *AuthMiddleware {
-	return &AuthMiddleware{}
+func NewAuthMiddleware(jwt *auth.JWTService) *AuthMiddleware {
+	return &AuthMiddleware{jwt: jwt}
 }
 
+// RequireAuth проверяет Bearer JWT и кладет userID в контекст запроса.
 func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: Реализовать проверку JWT токена
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			http.Error(w, "Authorization header required", http.StatusUnauthorized)
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, models.ErrorResponse{Error: "Authorization header required"})
 			return
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
-			http.Error(w, "Bearer token required", http.StatusUnauthorized)
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, models.ErrorResponse{Error: "Bearer token required"})
 			return
 		}
 
-		// TODO: Проверить валидность токена и извлечь userID
-		// userID, err := m.jwtService.ValidateToken(tokenString)
-		// if err != nil {
-		//     http.Error(w, "Invalid token", http.StatusUnauthorized)
-		//     return
-		// }
+		claims, err := m.jwt.ValidateToken(tokenString)
+		if err != nil || claims.UserID == 0 {
+			render.Status(r, http.StatusUnauthorized)
+			render.JSON(w, r, models.ErrorResponse{Error: "invalid or expired token"})
+			return
+		}
 
-		// // Добавить userID в контекст запроса
-		// ctx := context.WithValue(r.Context(), "userID", userID)
-		// next.ServeHTTP(w, r.WithContext(ctx))
-		next.ServeHTTP(w, r)
+		ctx := context.WithValue(r.Context(), userIDKey, claims.UserID)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-func (m *AuthMiddleware) RequireRole(role string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// TODO: Реализовать проверку роли пользователя
-			next.ServeHTTP(w, r)
-		})
+// UserIDFromContext извлекает userID текущего пользователя из контекста.
+func UserIDFromContext(ctx context.Context) uint {
+	if v, ok := ctx.Value(userIDKey).(uint); ok {
+		return v
 	}
-}
-
-func (m *AuthMiddleware) GetUserIDFromContext(r *http.Request) uint {
-	// TODO: Извлечь userID из контекста
 	return 0
 }

@@ -6,11 +6,16 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 
+	"testovoe/internal/auth"
 	"testovoe/internal/handlers"
+	"testovoe/internal/repository"
+	"testovoe/internal/service"
 	"testovoe/pkg/middleware"
+
+	"database/sql"
 )
 
-func SetupRoutes() *chi.Mux {
+func SetupRoutes(db *sql.DB, jwtService *auth.JWTService) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Health check
@@ -18,25 +23,30 @@ func SetupRoutes() *chi.Mux {
 		render.JSON(w, r, map[string]string{"status": "ok"})
 	})
 
+	// Репозитории и сервисы
+	userRepo := repository.NewUserRepo(db)
+	teamRepo := repository.NewTeamRepo(db)
+	authService := service.NewAuthService(userRepo, jwtService)
+	teamService := service.NewTeamService(teamRepo, userRepo)
+
 	// Public routes
-	authHandler := handlers.NewAuthHandler()
-	r.Group(func(r chi.Router) {
-		r.Post("/api/v1/register", authHandler.Register)
-		r.Post("/api/v1/login", authHandler.Login)
-	})
+	authHandler := handlers.NewAuthHandler(authService)
+	r.Post("/api/v1/register", authHandler.Register)
+	r.Post("/api/v1/login", authHandler.Login)
 
 	// Protected routes
-	authMiddleware := middleware.NewAuthMiddleware()
+	authMiddleware := middleware.NewAuthMiddleware(jwtService)
 	r.Group(func(r chi.Router) {
 		r.Use(authMiddleware.RequireAuth)
 
 		// Team routes
-		teamHandler := handlers.NewTeamHandler()
+		teamHandler := handlers.NewTeamHandler(teamService)
 		r.Post("/api/v1/teams", teamHandler.CreateTeam)
 		r.Get("/api/v1/teams", teamHandler.GetTeams)
+		r.Get("/api/v1/teams/{id}/members", teamHandler.GetMembers)
 		r.Post("/api/v1/teams/{id}/invite", teamHandler.InviteUser)
 
-		// Task routes
+		// Task routes (TODO: реализовать в рамках раздела "API: задачи и отчет")
 		taskHandler := handlers.NewTaskHandler()
 		r.Post("/api/v1/tasks", taskHandler.CreateTask)
 		r.Get("/api/v1/tasks", taskHandler.GetTasks)

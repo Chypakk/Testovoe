@@ -1,0 +1,112 @@
+package service
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"strings"
+
+	"github.com/go-sql-driver/mysql"
+
+	"testovoe/internal/auth"
+	"testovoe/internal/models"
+	"testovoe/internal/repository"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+// Ошибки уровня сервиса.
+var (
+	ErrInvalidInput       = errors.New("invalid input")
+	ErrEmailExists        = errors.New("email already registered")
+	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrTeamNotFound       = errors.New("team not found")
+	ErrForbidden          = errors.New("forbidden")
+	ErrNotMember          = errors.New("user is not a member of this team")
+)
+
+const dupEntryErrNum = 1062
+
+func isDuplicateKey(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && me.Number == dupEntryErrNum
+}
+
+// AuthService — регистрация, аутентификация, выдача JWT.
+type AuthService struct {
+	users *repository.UserRepo
+	jwt   *auth.JWTService
+}
+
+func NewAuthService(users *repository.UserRepo, jwt *auth.JWTService) *AuthService {
+	return &AuthService{users: users, jwt: jwt}
+}
+
+func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) (*models.User, error) {
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	name := strings.TrimSpace(req.Name)
+
+	if !validEmail(email) {
+		return nil, ErrInvalidInput
+	}
+	if len(req.Password) < 6 {
+		return nil, ErrInvalidInput
+	}
+	if name == "" {
+		return nil, ErrInvalidInput
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := s.users.Create(ctx, email, string(hash), name)
+	if err != nil {
+		if isDuplicateKey(err) {
+			return nil, ErrEmailExists
+		}
+		return nil, err
+	}
+	return user, nil
+}
+
+func (s *AuthService) Login(ctx context.Context, req models.LoginRequest) (*models.LoginResponse, error) {
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+
+	user, err := s.users.GetByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrInvalidCredentials
+		}
+		return nil, err
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)) != nil {
+		return nil, ErrInvalidCredentials
+	}
+
+	token, err := s.jwt.GenerateToken(user.ID, user.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.LoginResponse{Token: token, User: *user}, nil
+}
+
+func validEmail(email string) bool {
+	if email == "" || len(email) > 255 {
+		return false
+	}
+	i := strings.Index(email, "@")
+	if i <= 0 || i == len(email)-1 || strings.Contains(email[i:], "@") {
+		return false
+	}
+	domain := email[i+1:]
+	j := strings.Index(domain, ".")
+	if j <= 0 || j == len(domain)-1 {
+		return false
+	}
+	return !strings.ContainsAny(email, " \t")
+}
