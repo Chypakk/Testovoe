@@ -5,17 +5,17 @@ import (
 )
 
 type Task struct {
-	ID          uint      `json:"id" db:"id"`
-	TeamID      uint      `json:"team_id" db:"team_id"`
-	Title       string    `json:"title" db:"title"`
-	Description string    `json:"description" db:"description"`
-	Status      string    `json:"status" db:"status"` // todo, in_progress, done
-	CreatedBy   uint      `json:"created_by" db:"created_by"`
-	AssigneeID  *uint     `json:"assignee_id" db:"assignee_id"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	ID          uint       `json:"id" db:"id"`
+	TeamID      uint       `json:"team_id" db:"team_id"`
+	Title       string     `json:"title" db:"title"`
+	Description string     `json:"description" db:"description"`
+	Status      string     `json:"status" db:"status"` // todo, in_progress, done
+	CreatedBy   uint       `json:"created_by" db:"created_by"`
+	AssigneeID  *uint      `json:"assignee_id" db:"assignee_id"`
+	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 	ClosedAt    *time.Time `json:"closed_at" db:"closed_at"`
-	Version     int       `json:"version" db:"version"`
+	Version     int        `json:"version" db:"version"`
 }
 
 type CreateTaskRequest struct {
@@ -54,11 +54,11 @@ type CreateCommentRequest struct {
 }
 
 type TeamStats struct {
-	TotalTasks     int `json:"total_tasks"`
-	TasksByStatus  map[string]int `json:"tasks_by_status"`
-	TopPerformers  []TopPerformer  `json:"top_performers"`
-	AvgCloseTime   float64        `json:"avg_close_time"`
-	TotalComments  int            `json:"total_comments"`
+	TotalTasks    int            `json:"total_tasks"`
+	TasksByStatus map[string]int `json:"tasks_by_status"`
+	TopPerformers []TopPerformer `json:"top_performers"`
+	AvgCloseTime  float64        `json:"avg_close_time"`
+	TotalComments int            `json:"total_comments"`
 }
 
 type TopPerformer struct {
