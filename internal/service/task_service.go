@@ -85,17 +85,19 @@ func (s *TaskService) Create(ctx context.Context, userID uint, req models.Create
 
 // List возвращает задачи по фильтрам с кешированием
 func (s *TaskService) List(ctx context.Context, userID uint, f repository.TaskFilter) ([]models.Task, error) {
+	if f.TeamID == 0 {
+		return nil, ErrInvalidInput
+	}
+
 	if f.Status != "" && !validTaskStatuses[f.Status] {
 		return nil, ErrInvalidInput
 	}
 
-	if f.TeamID != 0 {
-		if _, err := s.teams.GetMembership(ctx, f.TeamID, userID); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil, ErrForbidden
-			}
-			return nil, err
+	if _, err := s.teams.GetMembership(ctx, f.TeamID, userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrForbidden
 		}
+		return nil, err
 	}
 
 	// Пробуем достать из кеша
@@ -121,17 +123,19 @@ func (s *TaskService) List(ctx context.Context, userID uint, f repository.TaskFi
 }
 
 func (s *TaskService) Count(ctx context.Context, userID uint, f repository.TaskFilter) (int, error) {
+	if f.TeamID == 0 {
+		return 0, ErrInvalidInput
+	}
+
 	if f.Status != "" && !validTaskStatuses[f.Status] {
 		return 0, ErrInvalidInput
 	}
 
-	if f.TeamID != 0 {
-		if _, err := s.teams.GetMembership(ctx, f.TeamID, userID); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return 0, ErrForbidden
-			}
-			return 0, err
+	if _, err := s.teams.GetMembership(ctx, f.TeamID, userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, ErrForbidden
 		}
+		return 0, err
 	}
 
 	return s.tasks.Count(ctx, f, userID)
@@ -241,9 +245,11 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 	if in.Title != nil && *in.Title != cur.Title {
 		history = append(history, fmt.Sprintf("title: %q -> %q", cur.Title, *in.Title))
 	}
+
 	if in.Description != nil && *in.Description != cur.Description {
-		history = append(history, "description updated")
+		history = append(history, fmt.Sprintf("description: %q -> %q", cur.Description, *in.Description))
 	}
+	
 	if in.Status != nil && *in.Status != cur.Status {
 		history = append(history, fmt.Sprintf("status: %s -> %s", cur.Status, *in.Status))
 	}

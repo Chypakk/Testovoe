@@ -49,19 +49,27 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, task)
 }
 
-// GetTasks обрабатывает GET /api/v1/tasks?team_id=&status=&assignee_id=.
+// GetTasks обрабатывает GET /api/v1/tasks?team_id=1&status=todo&assignee_id=5&limit=20&offset=0.
 func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	f := repository.TaskFilter{Status: q.Get("status")}
-	if v := q.Get("team_id"); v != "" {
-		id, err := strconv.ParseUint(v, 10, 64)
-		if err != nil || id == 0 {
-			respondError(w, r, http.StatusBadRequest, "invalid team_id")
-			return
-		}
-		f.TeamID = uint(id)
+	teamIDStr := q.Get("team_id")
+	if teamIDStr == "" {
+		respondError(w, r, http.StatusBadRequest, "team_id is required")
+		return
 	}
+
+	teamID, err := strconv.ParseUint(teamIDStr, 10, 64)
+	if err != nil || teamID == 0 {
+		respondError(w, r, http.StatusBadRequest, "invalid team_id")
+		return
+	}
+
+	f := repository.TaskFilter{
+		TeamID: uint(teamID),
+		Status: q.Get("status"),
+	}
+
 	if v := q.Get("assignee_id"); v != "" {
 		id, err := strconv.ParseUint(v, 10, 64)
 		if err != nil || id == 0 {
@@ -83,8 +91,9 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = l
 	}
+
 	if limit > maxLimit {
-		limit = maxLimit // защищаемся от слишком больших запросов
+		limit = maxLimit
 	}
 
 	offset := 0
@@ -101,11 +110,12 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 	f.Offset = offset
 
 	userID := middleware.UserIDFromContext(r.Context())
+
 	tasks, err := h.svc.List(r.Context(), userID, f)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidInput):
-			respondError(w, r, http.StatusBadRequest, "status must be one of todo|in_progress|done")
+			respondError(w, r, http.StatusBadRequest, "invalid query: team_id is required; status must be one of todo|in_progress|done")
 		case errors.Is(err, service.ErrForbidden):
 			respondError(w, r, http.StatusForbidden, "you are not a member of this team")
 		default:
@@ -116,7 +126,14 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 
 	total, err := h.svc.Count(r.Context(), userID, f)
 	if err != nil {
-		respondError(w, r, http.StatusInternalServerError, "internal server error")
+		switch {
+		case errors.Is(err, service.ErrInvalidInput):
+			respondError(w, r, http.StatusBadRequest, "invalid query: team_id is required; status must be one of todo|in_progress|done")
+		case errors.Is(err, service.ErrForbidden):
+			respondError(w, r, http.StatusForbidden, "you are not a member of this team")
+		default:
+			respondError(w, r, http.StatusInternalServerError, "internal server error")
+		}
 		return
 	}
 
