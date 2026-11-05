@@ -1,0 +1,4 @@
+.git
+.vscode
+**/*_test.go
+agent-transcripts

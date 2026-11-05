@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"testovoe/internal/configs"
 	"testovoe/internal/models"
 )
 
@@ -13,8 +14,8 @@ type UserRepo struct {
 	dia *Dialect
 }
 
-func NewUserRepo(db *sql.DB) *UserRepo {
-	return &UserRepo{db: db, dia: NewDialect(db)}
+func NewUserRepo(db *sql.DB, cfg *configs.Config) *UserRepo {
+	return &UserRepo{db: db, dia: NewDialectFromDriver(cfg.Database.Driver)}
 }
 
 func (r *UserRepo) Create(ctx context.Context, email, passwordHash, name string) (*models.User, error) {

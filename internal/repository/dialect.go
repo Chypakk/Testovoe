@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"database/sql"
 	"strconv"
 	"strings"
 )
@@ -16,15 +15,6 @@ type Dialect struct {
 func NewDialectFromDriver(driverName string) *Dialect {
 	name := strings.ToLower(strings.TrimSpace(driverName))
 	return &Dialect{IsPostgres: strings.Contains(name, "pgx") || strings.Contains(name, "postgres")}
-}
-
-// NewDialect определяет диалект по драйверу открытого соединения.
-// pgx/v5 stdlib реализует NamedDriver и сообщает имя "pgx"; остальные драйверы считаем MySQL-совместимыми.
-func NewDialect(db *sql.DB) *Dialect {
-	if dn, ok := db.Driver().(interface{ Name() string }); ok {
-		return NewDialectFromDriver(dn.Name())
-	}
-	return &Dialect{IsPostgres: false}
 }
 
 // Ph превращает "?" в "$N" для postgres; для mysql возвращает как есть.

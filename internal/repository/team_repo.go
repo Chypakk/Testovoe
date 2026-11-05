@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	"testovoe/internal/configs"
 	"testovoe/internal/models"
 )
 
@@ -13,8 +14,8 @@ type TeamRepo struct {
 	dia *Dialect
 }
 
-func NewTeamRepo(db *sql.DB) *TeamRepo {
-	return &TeamRepo{db: db, dia: NewDialect(db)}
+func NewTeamRepo(db *sql.DB, cfg *configs.Config) *TeamRepo {
+	return &TeamRepo{db: db, dia: NewDialectFromDriver(cfg.Database.Driver)}
 }
 
 // CreateWithOwner атомарно создает команду и добавляет создателя как участника с ролью owner.

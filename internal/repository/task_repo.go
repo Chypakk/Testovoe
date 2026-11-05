@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"testovoe/internal/configs"
 	"testovoe/internal/models"
 )
 
@@ -15,7 +16,7 @@ type TaskFilter struct {
 	Status     string
 	AssigneeID uint
 	Limit      int // Макс. кол-во записей
-    Offset     int // Сдвиг от начала
+	Offset     int // Сдвиг от начала
 }
 
 // TaskRepo — доступ к таблицам tasks, task_history, task_comments.
@@ -26,17 +27,17 @@ type TaskRepo struct {
 
 // TeamStatsResult — результат единого SQL-запроса статистики команды.
 type TeamStatsResult struct {
-    TotalTasks    int
-    Todo          int
-    InProgress    int
-    Done          int
-    AvgCloseSecs  sql.NullFloat64
-    TotalComments int
-    TopPerformers []TopPerformerRow
+	TotalTasks    int
+	Todo          int
+	InProgress    int
+	Done          int
+	AvgCloseSecs  sql.NullFloat64
+	TotalComments int
+	TopPerformers []TopPerformerRow
 }
 
-func NewTaskRepo(db *sql.DB) *TaskRepo {
-	return &TaskRepo{db: db, dia: NewDialect(db)}
+func NewTaskRepo(db *sql.DB, cfg *configs.Config) *TaskRepo {
+	return &TaskRepo{db: db, dia: NewDialectFromDriver(cfg.Database.Driver)}
 }
 
 const taskColumns = `id, team_id, title, description, status, created_by, assignee_id, created_at, updated_at, closed_at, version`
@@ -131,14 +132,14 @@ func (r *TaskRepo) List(ctx context.Context, f TaskFilter, userID uint) ([]model
 	q += ` ORDER BY t.id DESC`
 
 	if f.Limit > 0 {
-        q += ` LIMIT ?`
-        args = append(args, f.Limit)
-        
-        if f.Offset > 0 {
-            q += ` OFFSET ?`
-            args = append(args, f.Offset)
-        }
-    }
+		q += ` LIMIT ?`
+		args = append(args, f.Limit)
+
+		if f.Offset > 0 {
+			q += ` OFFSET ?`
+			args = append(args, f.Offset)
+		}
+	}
 
 	rows, err := r.db.QueryContext(ctx, r.dia.Ph(q), args...)
 	if err != nil {
@@ -160,129 +161,129 @@ func (r *TaskRepo) List(ctx context.Context, f TaskFilter, userID uint) ([]model
 
 // Count возвращает общее количество задач по фильтрам (для метаданных пагинации).
 func (r *TaskRepo) Count(ctx context.Context, f TaskFilter, userID uint) (int, error) {
-    q := `SELECT COUNT(*) FROM tasks t`
-    args := []interface{}{}
-    
-    // Если не указан team_id, проверяем, что пользователь вообще видит эту команду
-    if f.TeamID == 0 {
-        q += ` JOIN team_members tm ON tm.team_id = t.team_id AND tm.user_id = ?`
-        args = append(args, userID)
-    }
+	q := `SELECT COUNT(*) FROM tasks t`
+	args := []interface{}{}
 
-    whereClauses := []string{}
-    if f.TeamID != 0 {
-        whereClauses = append(whereClauses, `t.team_id = ?`)
-        args = append(args, f.TeamID)
-    }
-    if f.Status != "" {
-        whereClauses = append(whereClauses, `t.status = ?`)
-        args = append(args, f.Status)
-    }
-    if f.AssigneeID != 0 {
-        whereClauses = append(whereClauses, `t.assignee_id = ?`)
-        args = append(args, f.AssigneeID)
-    }
-    
-    if len(whereClauses) > 0 {
-        q += ` WHERE ` + strings.Join(whereClauses, " AND ")
-    }
+	// Если не указан team_id, проверяем, что пользователь вообще видит эту команду
+	if f.TeamID == 0 {
+		q += ` JOIN team_members tm ON tm.team_id = t.team_id AND tm.user_id = ?`
+		args = append(args, userID)
+	}
 
-    var count int
-    err := r.db.QueryRowContext(ctx, r.dia.Ph(q), args...).Scan(&count)
-    return count, err
+	whereClauses := []string{}
+	if f.TeamID != 0 {
+		whereClauses = append(whereClauses, `t.team_id = ?`)
+		args = append(args, f.TeamID)
+	}
+	if f.Status != "" {
+		whereClauses = append(whereClauses, `t.status = ?`)
+		args = append(args, f.Status)
+	}
+	if f.AssigneeID != 0 {
+		whereClauses = append(whereClauses, `t.assignee_id = ?`)
+		args = append(args, f.AssigneeID)
+	}
+
+	if len(whereClauses) > 0 {
+		q += ` WHERE ` + strings.Join(whereClauses, " AND ")
+	}
+
+	var count int
+	err := r.db.QueryRowContext(ctx, r.dia.Ph(q), args...).Scan(&count)
+	return count, err
 }
 
 // UpdateWithHistory выполняет оптимистичное обновление (WHERE id=? AND version=?)
 // и атомарно добавляет записи истории. Возвращает sql.ErrNoRows, если версия не совпала
 // или задача недоступна пользователю.
 func (r *TaskRepo) UpdateWithHistory(ctx context.Context, id uint, in UpdateInput, history []string) (*models.Task, error) {
-    // Проверка доступа — только чтение, можно вне транзакции
-    cur, err := r.getForUser(ctx, id, in.UserID)
-    if err != nil {
-        return nil, err
-    }
+	// Проверка доступа — только чтение, можно вне транзакции
+	cur, err := r.getForUser(ctx, id, in.UserID)
+	if err != nil {
+		return nil, err
+	}
 
-    // Вычисляем новые значения полей
-    title := cur.Title
-    if in.Title != nil {
-        title = *in.Title
-    }
-    
-    description := cur.Description
-    if in.Description != nil {
-        description = *in.Description
-    }
-    
-    status := cur.Status
-    if in.Status != nil {
-        status = *in.Status
-    }
-    
-    assignee := cur.AssigneeID
-    if in.SetAssignee {
-        assignee = in.AssigneeID
-    }
-    
-    closedAt := cur.ClosedAt
-    switch {
-    case status == "done" && cur.Status != "done":
-        now := time.Now().UTC()
-        closedAt = &now
-    case status != "done" && cur.Status == "done":
-        closedAt = nil
-    }
+	// Вычисляем новые значения полей
+	title := cur.Title
+	if in.Title != nil {
+		title = *in.Title
+	}
 
-    newVersion := cur.Version + 1
-    
-    // === НАЧИНАЕМ ТРАНЗАКЦИЮ ДЛЯ ВСЕХ ПИШУЩИХ ОПЕРАЦИЙ ===
-    tx, err := r.db.BeginTx(ctx, nil)
-    if err != nil {
-        return nil, err
-    }
-    defer func() { _ = tx.Rollback() }()
+	description := cur.Description
+	if in.Description != nil {
+		description = *in.Description
+	}
 
-    // 1. UPDATE задачи внутри транзакции
-    set := []string{"title = ?", "description = ?", "status = ?", "assignee_id = ?", "closed_at = ?", "version = ?"}
-    args := []interface{}{title, description, status, assignee, closedAt, newVersion}
-    
-    if !r.dia.IsPostgres {
-        set = append(set, "updated_at = NOW()")
-    }
-    
-    where := ` WHERE id = ? AND version = ?`
-    args = append(args, id, cur.Version)
+	status := cur.Status
+	if in.Status != nil {
+		status = *in.Status
+	}
 
-    res, err := tx.ExecContext(ctx, 
-        r.dia.Ph(`UPDATE tasks SET `+strings.Join(set, ", ")+where), args...)
-    if err != nil {
-        return nil, err // откат через defer
-    }
+	assignee := cur.AssigneeID
+	if in.SetAssignee {
+		assignee = in.AssigneeID
+	}
 
-    affected, err := res.RowsAffected()
-    if err != nil {
-        return nil, err
-    }
-    if affected == 0 {
-        return nil, sql.ErrNoRows // optimistic lock conflict
-    }
+	closedAt := cur.ClosedAt
+	switch {
+	case status == "done" && cur.Status != "done":
+		now := time.Now().UTC()
+		closedAt = &now
+	case status != "done" && cur.Status == "done":
+		closedAt = nil
+	}
 
-    // 2. INSERT истории внутри ТОЙ ЖЕ транзакции
-    if len(history) > 0 {
-        for _, h := range history {
-            if _, err := tx.ExecContext(ctx,
-                r.dia.Ph(`INSERT INTO task_history (task_id, changed_by, changes) VALUES (?, ?, ?)`),
-                id, in.UserID, h); err != nil {
-                return nil, err // откат через defer
-            }
-        }
-    }
+	newVersion := cur.Version + 1
 
-    // 3. Коммитим всё атомарно
-    if err := tx.Commit(); err != nil {
-        return nil, err
-    }
+	// === НАЧИНАЕМ ТРАНЗАКЦИЮ ДЛЯ ВСЕХ ПИШУЩИХ ОПЕРАЦИЙ ===
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
 
-    return r.GetByID(ctx, id)
+	// 1. UPDATE задачи внутри транзакции
+	set := []string{"title = ?", "description = ?", "status = ?", "assignee_id = ?", "closed_at = ?", "version = ?"}
+	args := []interface{}{title, description, status, assignee, closedAt, newVersion}
+
+	if !r.dia.IsPostgres {
+		set = append(set, "updated_at = NOW()")
+	}
+
+	where := ` WHERE id = ? AND version = ?`
+	args = append(args, id, cur.Version)
+
+	res, err := tx.ExecContext(ctx,
+		r.dia.Ph(`UPDATE tasks SET `+strings.Join(set, ", ")+where), args...)
+	if err != nil {
+		return nil, err // откат через defer
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		return nil, sql.ErrNoRows // optimistic lock conflict
+	}
+
+	// 2. INSERT истории внутри ТОЙ ЖЕ транзакции
+	if len(history) > 0 {
+		for _, h := range history {
+			if _, err := tx.ExecContext(ctx,
+				r.dia.Ph(`INSERT INTO task_history (task_id, changed_by, changes) VALUES (?, ?, ?)`),
+				id, in.UserID, h); err != nil {
+				return nil, err // откат через defer
+			}
+		}
+	}
+
+	// 3. Коммитим всё атомарно
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return r.GetByID(ctx, id)
 }
 
 // UpdateInput — данные обновления; UserID используется для проверки видимости задачи.
@@ -404,19 +405,19 @@ func (r *TaskRepo) Comments(ctx context.Context, taskID, userID uint) ([]models.
 // Метрики: задачи по статусам, топ-3 исполнителя по закрытым задачам за 30 дней,
 // среднее время закрытия, количество комментариев.
 func (r *TaskRepo) Stats(ctx context.Context, teamID uint, topPerformersLimit int) (*TeamStatsResult, error) {
-    // Разные диалекты для вычисления среднего времени закрытия и фильтра по датам
-    var avgExpr, dateFilter string
-    if r.dia.IsPostgres {
-        avgExpr = `AVG(CASE WHEN status = 'done' AND closed_at IS NOT NULL 
+	// Разные диалекты для вычисления среднего времени закрытия и фильтра по датам
+	var avgExpr, dateFilter string
+	if r.dia.IsPostgres {
+		avgExpr = `AVG(CASE WHEN status = 'done' AND closed_at IS NOT NULL 
             THEN EXTRACT(EPOCH FROM (closed_at - created_at)) END)`
-        dateFilter = `t.closed_at >= NOW() - INTERVAL '30 days'`
-    } else {
-        avgExpr = `AVG(CASE WHEN status = 'done' AND closed_at IS NOT NULL 
+		dateFilter = `t.closed_at >= NOW() - INTERVAL '30 days'`
+	} else {
+		avgExpr = `AVG(CASE WHEN status = 'done' AND closed_at IS NOT NULL 
             THEN TIMESTAMPDIFF(SECOND, created_at, closed_at) END)`
-        dateFilter = `t.closed_at >= NOW() - INTERVAL 30 DAY`
-    }
+		dateFilter = `t.closed_at >= NOW() - INTERVAL 30 DAY`
+	}
 
-    query := `
+	query := `
 WITH task_stats AS (
     SELECT 
         COUNT(*) AS total_tasks,
@@ -458,58 +459,58 @@ CROSS JOIN comment_stats cs
 LEFT JOIN top_performers tp ON TRUE
 `
 
-    // Передаём limit как параметр
-    rows, err := r.db.QueryContext(ctx, r.dia.Ph(query), teamID, teamID, teamID, topPerformersLimit)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
+	// Передаём limit как параметр
+	rows, err := r.db.QueryContext(ctx, r.dia.Ph(query), teamID, teamID, teamID, topPerformersLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-    result := &TeamStatsResult{
-        TopPerformers: make([]TopPerformerRow, 0),
-    }
+	result := &TeamStatsResult{
+		TopPerformers: make([]TopPerformerRow, 0),
+	}
 
-    firstRow := true
-    for rows.Next() {
-        var (
-            totalTasks    int
-            todo          int
-            inProgress    int
-            done          int
-            avgCloseSecs  sql.NullFloat64
-            totalComments int
-            performerID   sql.NullInt64
-            performerName sql.NullString
-            performerCnt  sql.NullInt64
-        )
+	firstRow := true
+	for rows.Next() {
+		var (
+			totalTasks    int
+			todo          int
+			inProgress    int
+			done          int
+			avgCloseSecs  sql.NullFloat64
+			totalComments int
+			performerID   sql.NullInt64
+			performerName sql.NullString
+			performerCnt  sql.NullInt64
+		)
 
-        if err := rows.Scan(
-            &totalTasks, &todo, &inProgress, &done, &avgCloseSecs,
-            &totalComments, &performerID, &performerName, &performerCnt,
-        ); err != nil {
-            return nil, err
-        }
+		if err := rows.Scan(
+			&totalTasks, &todo, &inProgress, &done, &avgCloseSecs,
+			&totalComments, &performerID, &performerName, &performerCnt,
+		); err != nil {
+			return nil, err
+		}
 
-        if firstRow {
-            result.TotalTasks = totalTasks
-            result.Todo = todo
-            result.InProgress = inProgress
-            result.Done = done
-            result.AvgCloseSecs = avgCloseSecs
-            result.TotalComments = totalComments
-            firstRow = false
-        }
+		if firstRow {
+			result.TotalTasks = totalTasks
+			result.Todo = todo
+			result.InProgress = inProgress
+			result.Done = done
+			result.AvgCloseSecs = avgCloseSecs
+			result.TotalComments = totalComments
+			firstRow = false
+		}
 
-        if performerID.Valid {
-            result.TopPerformers = append(result.TopPerformers, TopPerformerRow{
-                UserID:   uint(performerID.Int64),
-                UserName: performerName.String,
-                DoneCnt:  int(performerCnt.Int64),
-            })
-        }
-    }
+		if performerID.Valid {
+			result.TopPerformers = append(result.TopPerformers, TopPerformerRow{
+				UserID:   uint(performerID.Int64),
+				UserName: performerName.String,
+				DoneCnt:  int(performerCnt.Int64),
+			})
+		}
+	}
 
-    return result, rows.Err()
+	return result, rows.Err()
 }
 
 // TopPerformerRow — строка рейтинга исполнителей.

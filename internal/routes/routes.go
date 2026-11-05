@@ -30,9 +30,9 @@ func SetupRoutes(db *sql.DB, jwtService *auth.JWTService, cfg *configs.Config) *
 
 	// Репозитории и сервисы
 	taskCache := cache.NewTaskCache(cfg.Redis) // Используем фабрику
-	userRepo := repository.NewUserRepo(db)
-	teamRepo := repository.NewTeamRepo(db)
-	taskRepo := repository.NewTaskRepo(db)
+	userRepo := repository.NewUserRepo(db, cfg)
+	teamRepo := repository.NewTeamRepo(db, cfg)
+	taskRepo := repository.NewTaskRepo(db, cfg)
 
 	authService := service.NewAuthService(userRepo, jwtService)
 	teamService := service.NewTeamService(teamRepo, userRepo)

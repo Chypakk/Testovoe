@@ -36,10 +36,9 @@ func main() {
 	defer db.Close()
 
 	if err := db.RunMigrations(); err != nil {
-		log.Printf("Warning: failed to run migrations: %v", err)
-	} else {
-		log.Println("Migrations applied successfully")
+		log.Fatalf("Failed to run migrations: %v", err)
 	}
+	log.Println("Migrations applied successfully")
 
 	jwtService := auth.NewJWTService(cfg.JWT.Secret)
 	r := routes.SetupRoutes(db.GetDB(), jwtService, cfg) // Передаем cfg

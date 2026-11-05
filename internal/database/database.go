@@ -35,7 +35,7 @@ func NewDatabase(cfg configs.DatabaseConfig) (*Database, error) {
 	case "mysql":
 		sqlDriverName = "mysql"
 		dsn = fmt.Sprintf(
-			"%s:%s@tcp(%s:%s)/%s?parseTime=true",
+			"%s:%s@tcp(%s:%s)/%s?parseTime=true&multiStatements=true",
 			cfg.User,
 			cfg.Password,
 			cfg.Host,
@@ -121,7 +121,7 @@ func (d *Database) runMigrations(up bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to create migrate instance: %w", err)
 		}
-		defer m.Close()
+		// defer m.Close()
 
 		return applyMigrations(m, up)
 
@@ -139,7 +139,7 @@ func (d *Database) runMigrations(up bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to create migrate instance: %w", err)
 		}
-		defer m.Close()
+		// defer m.Close()
 
 		return applyMigrations(m, up)
 

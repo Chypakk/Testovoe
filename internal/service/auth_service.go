@@ -114,7 +114,7 @@ func validEmail(email string) bool {
 		return false
 	}
 	i := strings.Index(email, "@")
-	if i <= 0 || i == len(email)-1 || strings.Contains(email[i:], "@") {
+	if i <= 0 || i == len(email)-1 || strings.Contains(email[i+1:], "@") {
 		return false
 	}
 	domain := email[i+1:]
