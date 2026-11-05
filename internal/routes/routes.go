@@ -5,9 +5,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
-
 	"testovoe/internal/auth"
 	"testovoe/internal/cache"
+	"testovoe/internal/configs"
 	"testovoe/internal/handlers"
 	"testovoe/internal/repository"
 	"testovoe/internal/service"
@@ -16,7 +16,7 @@ import (
 	"database/sql"
 )
 
-func SetupRoutes(db *sql.DB, jwtService *auth.JWTService) *chi.Mux {
+func SetupRoutes(db *sql.DB, jwtService *auth.JWTService, cfg *configs.Config) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Health check
@@ -25,13 +25,14 @@ func SetupRoutes(db *sql.DB, jwtService *auth.JWTService) *chi.Mux {
 	})
 
 	// Репозитории и сервисы
-	cache := cache.NewInMemoryCache()
+	taskCache := cache.NewTaskCache(cfg.Redis) // Используем фабрику
 	userRepo := repository.NewUserRepo(db)
 	teamRepo := repository.NewTeamRepo(db)
 	taskRepo := repository.NewTaskRepo(db)
+
 	authService := service.NewAuthService(userRepo, jwtService)
 	teamService := service.NewTeamService(teamRepo, userRepo)
-	taskService := service.NewTaskService(taskRepo, teamRepo, userRepo, cache)
+	taskService := service.NewTaskService(taskRepo, teamRepo, userRepo, taskCache)
 
 	// Public routes
 	authHandler := handlers.NewAuthHandler(authService)

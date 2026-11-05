@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
-
 	"testovoe/internal/cache"
 	"testovoe/internal/models"
 	"testovoe/internal/repository"
@@ -17,24 +17,18 @@ var validTaskStatuses = map[string]bool{"todo": true, "in_progress": true, "done
 
 const topPerformersLimit = 3
 
-// TaskService — бизнес-логика задач: создание, фильтрация, обновление с оптимистичной
-// блокировкой и историей, комментарии, статистика команды.
-// Все операции доступны только участникам команды; чужие задачи не видны (404).
-// Права на редактирование задач реализованы здесь (см. canEditTask) согласно ТЗ:
-// owner/admin — любые задачи; создатель задачи — title/description/status/assignee;
-// исполнитель — только статус; остальные участники — только чтение.
 type TaskService struct {
-	tasks *repository.TaskRepo
-	teams *repository.TeamRepo
-	users *repository.UserRepo
-	cache cache.Cache
+	tasks     *repository.TaskRepo
+	teams     *repository.TeamRepo
+	users     *repository.UserRepo
+	taskCache cache.TaskCache
 }
 
-func NewTaskService(tasks *repository.TaskRepo, teams *repository.TeamRepo, users *repository.UserRepo, cache cache.Cache) *TaskService {
-	return &TaskService{tasks: tasks, teams: teams, users: users, cache: cache}
+func NewTaskService(tasks *repository.TaskRepo, teams *repository.TeamRepo, users *repository.UserRepo, taskCache cache.TaskCache) *TaskService {
+	return &TaskService{tasks: tasks, teams: teams, users: users, taskCache: taskCache}
 }
 
-// Create создает задачу в команде. AssigneeID должен быть участником этой команды.
+// Create создает задачу в команде и инвалидирует кеш
 func (s *TaskService) Create(ctx context.Context, userID uint, req models.CreateTaskRequest) (*models.Task, error) {
 	title := strings.TrimSpace(req.Title)
 	if req.TeamID == 0 || title == "" || !validTaskStatuses[req.Status] {
@@ -43,7 +37,7 @@ func (s *TaskService) Create(ctx context.Context, userID uint, req models.Create
 
 	if _, err := s.teams.GetMembership(ctx, req.TeamID, userID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrForbidden // не участник команды
+			return nil, ErrForbidden
 		}
 		return nil, err
 	}
@@ -53,7 +47,7 @@ func (s *TaskService) Create(ctx context.Context, userID uint, req models.Create
 		role, err := s.teams.GetMembership(ctx, req.TeamID, *req.AssigneeID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
-				return nil, ErrInvalidInput // исполнитель не состоит в команде
+				return nil, ErrInvalidInput
 			}
 			return nil, err
 		}
@@ -70,6 +64,7 @@ func (s *TaskService) Create(ctx context.Context, userID uint, req models.Create
 		CreatedBy:   userID,
 		AssigneeID:  assignee,
 	}
+
 	if task.Status == "done" {
 		now := nowUTC()
 		task.ClosedAt = &now
@@ -79,14 +74,21 @@ func (s *TaskService) Create(ctx context.Context, userID uint, req models.Create
 	if err != nil {
 		return nil, err
 	}
+
+	// Инвалидируем кеш для этой команды
+	if err := s.taskCache.InvalidateTeam(ctx, req.TeamID); err != nil {
+		log.Printf("Warning: failed to invalidate cache: %v", err)
+	}
+
 	return created, nil
 }
 
-// List возвращает задачи по фильтрам (team_id, status, assignee_id).
+// List возвращает задачи по фильтрам с кешированием
 func (s *TaskService) List(ctx context.Context, userID uint, f repository.TaskFilter) ([]models.Task, error) {
 	if f.Status != "" && !validTaskStatuses[f.Status] {
 		return nil, ErrInvalidInput
 	}
+
 	if f.TeamID != 0 {
 		if _, err := s.teams.GetMembership(ctx, f.TeamID, userID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -95,39 +97,54 @@ func (s *TaskService) List(ctx context.Context, userID uint, f repository.TaskFi
 			return nil, err
 		}
 	}
-	return s.tasks.List(ctx, f, userID)
+
+	// Пробуем достать из кеша
+	tasks, found, err := s.taskCache.GetTasks(ctx, f)
+	if err != nil {
+		log.Printf("Warning: cache get error: %v", err)
+	} else if found {
+		return tasks, nil
+	}
+
+	// Cache miss — идем в БД
+	tasks, err = s.tasks.List(ctx, f, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Кладем в кеш (ошибки кеша не должны ломать ручку)
+	if err := s.taskCache.SetTasks(ctx, f, tasks); err != nil {
+		log.Printf("Warning: cache set error: %v", err)
+	}
+
+	return tasks, nil
 }
 
 func (s *TaskService) Count(ctx context.Context, userID uint, f repository.TaskFilter) (int, error) {
-    if f.Status != "" && !validTaskStatuses[f.Status] {
-        return 0, ErrInvalidInput
-    }
-    if f.TeamID != 0 {
-        if _, err := s.teams.GetMembership(ctx, f.TeamID, userID); err != nil {
-            if errors.Is(err, sql.ErrNoRows) {
-                return 0, ErrForbidden
-            }
-            return 0, err
-        }
-    }
-    return s.tasks.Count(ctx, f, userID)
+	if f.Status != "" && !validTaskStatuses[f.Status] {
+		return 0, ErrInvalidInput
+	}
+
+	if f.TeamID != 0 {
+		if _, err := s.teams.GetMembership(ctx, f.TeamID, userID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return 0, ErrForbidden
+			}
+			return 0, err
+		}
+	}
+
+	return s.tasks.Count(ctx, f, userID)
 }
 
-// taskEditRights — результат проверки прав на редактирование задачи:
-// какие поля разрешено менять вызывающему пользователю.
 type taskEditRights struct {
-	canEditAll     bool // owner/admin команды: любые поля, включая переназначение
-	canChangeTitle bool // создатель задачи (или owner/admin)
+	canEditAll     bool
+	canChangeTitle bool
 	canChangeDesc  bool
 	canChangeStat  bool
-	canReassign    bool // смена/снятие исполнителя
+	canReassign    bool
 }
 
-// resolveTaskRights вычисляет права пользователя на задачу по ролевой модели ТЗ:
-//   - owner/admin команды — редактируют любые задачи полностью;
-//   - создатель задачи — название, описание, статус, исполнитель (если тот участник команды);
-//   - исполнитель — только статус, переназначать задачу он не может;
-//   - остальные участники — задача доступна только для чтения.
 func resolveTaskRights(role string, task *models.Task, userID uint) taskEditRights {
 	isManager := role == RoleOwner || role == RoleAdmin
 	r := taskEditRights{}
@@ -142,10 +159,7 @@ func resolveTaskRights(role string, task *models.Task, userID uint) taskEditRigh
 	return r
 }
 
-// Update обновляет задачу с проверкой версии (оптимистичная блокировка).
-// expectedVersion=0 означает «проверить версию по текущей записи» (мягкий режим),
-// иначе при несовпадении возвращается ErrVersionConflict (HTTP 409).
-// Права: см. resolveTaskRights — попытка изменить запрещённое поле → ErrForbidden (403).
+// Update обновляет задачу с инвалидацией кеша
 func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req models.UpdateTaskRequest, expectedVersion int) (*models.Task, error) {
 	cur, err := s.tasks.GetVisible(ctx, taskID, userID)
 	if err != nil {
@@ -155,7 +169,6 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 		return nil, err
 	}
 
-	// Роль пользователя в команде задачи (GetVisible уже гарантирует членство).
 	role, err := s.teams.GetMembership(ctx, cur.TeamID, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -163,9 +176,10 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 		}
 		return nil, err
 	}
+
 	rights := resolveTaskRights(role, cur, userID)
 	if !rights.canChangeTitle && !rights.canChangeDesc && !rights.canChangeStat && !rights.canReassign {
-		return nil, ErrForbidden // участник, не создатель и не исполнитель
+		return nil, ErrForbidden
 	}
 
 	if expectedVersion != 0 && expectedVersion != cur.Version {
@@ -173,24 +187,25 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 	}
 
 	in := repository.UpdateInput{UserID: userID}
-
 	if req.Title != "" {
 		t := strings.TrimSpace(req.Title)
 		if t == "" {
 			return nil, ErrInvalidInput
 		}
 		if !rights.canChangeTitle {
-			return nil, ErrForbidden // исполнитель не может менять название
+			return nil, ErrForbidden
 		}
 		in.Title = &t
 	}
+
 	if req.Description != "" {
 		if !rights.canChangeDesc {
-			return nil, ErrForbidden // исполнитель не может менять описание
+			return nil, ErrForbidden
 		}
 		d := req.Description
 		in.Description = &d
 	}
+
 	if req.Status != nil {
 		st := *req.Status
 		if !validTaskStatuses[st] {
@@ -201,18 +216,18 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 		}
 		in.Status = &st
 	}
+
 	if req.AssigneeID != nil {
 		if !rights.canReassign {
-			return nil, ErrForbidden // переназначение доступно создателю задачи и owner/admin
+			return nil, ErrForbidden
 		}
 		if *req.AssigneeID == 0 {
-			// снять исполнителя
 			in.SetAssignee = true
 			in.AssigneeID = nil
 		} else {
 			if _, err := s.teams.GetMembership(ctx, cur.TeamID, *req.AssigneeID); err != nil {
 				if errors.Is(err, sql.ErrNoRows) {
-					return nil, ErrInvalidInput // исполнитель не состоит в команде
+					return nil, ErrInvalidInput
 				}
 				return nil, err
 			}
@@ -232,6 +247,7 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 	if in.Status != nil && *in.Status != cur.Status {
 		history = append(history, fmt.Sprintf("status: %s -> %s", cur.Status, *in.Status))
 	}
+
 	switch {
 	case in.SetAssignee && in.AssigneeID == nil && cur.AssigneeID != nil:
 		history = append(history, fmt.Sprintf("assignee: %d -> none", *cur.AssigneeID))
@@ -242,26 +258,33 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 		}
 		history = append(history, fmt.Sprintf("assignee: %s -> %d", old, *in.AssigneeID))
 	}
+
 	if len(history) == 0 {
-		return cur, nil // ничего не изменилось — версия не растёт
+		return cur, nil
 	}
 
 	updated, err := s.tasks.UpdateWithHistory(ctx, taskID, in, history)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrVersionConflict // гонка: версия изменилась между чтением и записью
+			return nil, ErrVersionConflict
 		}
 		return nil, err
 	}
+
+	// Инвалидируем кеш после успешного обновления
+	if err := s.taskCache.InvalidateTeam(ctx, cur.TeamID); err != nil {
+		log.Printf("Warning: failed to invalidate cache: %v", err)
+	}
+
 	return updated, nil
 }
 
-// History возвращает историю изменений задачи.
 func (s *TaskService) History(ctx context.Context, taskID, userID uint) ([]models.TaskHistory, error) {
 	items, err := s.tasks.History(ctx, taskID, userID)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(items) == 0 {
 		if _, err := s.tasks.GetVisible(ctx, taskID, userID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -270,31 +293,33 @@ func (s *TaskService) History(ctx context.Context, taskID, userID uint) ([]model
 			return nil, err
 		}
 	}
+
 	return items, nil
 }
 
-// AddComment добавляет комментарий к задаче (только участник команды).
 func (s *TaskService) AddComment(ctx context.Context, taskID, userID uint, content string) (*models.TaskComment, error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return nil, ErrInvalidInput
 	}
+
 	comment, err := s.tasks.AddComment(ctx, taskID, userID, content)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrTaskNotFound // задача недоступна пользователю
+			return nil, ErrTaskNotFound
 		}
 		return nil, err
 	}
+
 	return comment, nil
 }
 
-// Comments возвращает комментарии задачи.
 func (s *TaskService) Comments(ctx context.Context, taskID, userID uint) ([]models.TaskComment, error) {
 	items, err := s.tasks.Comments(ctx, taskID, userID)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(items) == 0 {
 		if _, err := s.tasks.GetVisible(ctx, taskID, userID); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -303,50 +328,48 @@ func (s *TaskService) Comments(ctx context.Context, taskID, userID uint) ([]mode
 			return nil, err
 		}
 	}
+
 	return items, nil
 }
 
-// Stats возвращает статистику команды: распределение статусов, топ исполнителей,
-// среднее время закрытия, число комментариев.
-// По ТЗ аналитика доступна только создателю (owner) или администратору команды.
 func (s *TaskService) Stats(ctx context.Context, teamID, userID uint) (*models.TeamStats, error) {
-    role, err := s.teams.GetMembership(ctx, teamID, userID)
-    if err != nil {
-        if errors.Is(err, sql.ErrNoRows) {
-            return nil, ErrForbidden
-        }
-        return nil, err
-    }
-    if role != RoleOwner && role != RoleAdmin {
-        return nil, ErrForbidden
-    }
+	role, err := s.teams.GetMembership(ctx, teamID, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrForbidden
+		}
+		return nil, err
+	}
 
-    // Теперь один вызов вместо двух
-    result, err := s.tasks.Stats(ctx, teamID, topPerformersLimit)
-    if err != nil {
-        return nil, err
-    }
+	if role != RoleOwner && role != RoleAdmin {
+		return nil, ErrForbidden
+	}
 
-    stats := &models.TeamStats{
-        TotalTasks: result.TotalTasks,
-        TasksByStatus: map[string]int{
-            "todo":        result.Todo,
-            "in_progress": result.InProgress,
-            "done":        result.Done,
-        },
-        TopPerformers: make([]models.TopPerformer, 0, len(result.TopPerformers)),
-        AvgCloseTime:  result.AvgCloseSecs.Float64,
-        TotalComments: result.TotalComments,
-    }
+	result, err := s.tasks.Stats(ctx, teamID, topPerformersLimit)
+	if err != nil {
+		return nil, err
+	}
 
-    for _, p := range result.TopPerformers {
-        stats.TopPerformers = append(stats.TopPerformers,
-            models.TopPerformer{
-                UserID:    p.UserID,
-                UserName:  p.UserName,
-                TaskCount: p.DoneCnt,
-            })
-    }
+	stats := &models.TeamStats{
+		TotalTasks: result.TotalTasks,
+		TasksByStatus: map[string]int{
+			"todo":        result.Todo,
+			"in_progress": result.InProgress,
+			"done":        result.Done,
+		},
+		TopPerformers: make([]models.TopPerformer, 0, len(result.TopPerformers)),
+		AvgCloseTime:  result.AvgCloseSecs.Float64,
+		TotalComments: result.TotalComments,
+	}
 
-    return stats, nil
+	for _, p := range result.TopPerformers {
+		stats.TopPerformers = append(stats.TopPerformers,
+			models.TopPerformer{
+				UserID:    p.UserID,
+				UserName:  p.UserName,
+				TaskCount: p.DoneCnt,
+			})
+	}
+
+	return stats, nil
 }

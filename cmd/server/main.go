@@ -34,12 +34,10 @@ func main() {
 	}
 
 	jwtService := auth.NewJWTService(cfg.JWT.Secret)
-
-	r := routes.SetupRoutes(db.GetDB(), jwtService)
+	r := routes.SetupRoutes(db.GetDB(), jwtService, cfg) // Передаем cfg
 
 	addr := ":" + cfg.Server.Port
 	log.Printf("Server starting on %s", addr)
-
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
