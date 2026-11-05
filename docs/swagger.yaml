@@ -219,16 +219,10 @@ definitions:
         type: string
     type: object
 info:
-  contact:
-    email: support@swagger.io
-    name: API Support
-    url: http://www.swagger.io/support
-  description: API for task management system
-  license:
-    name: Apache 2.0
-    url: http://www.apache.org/licenses/LICENSE-2.0.html
-  termsOfService: http://swagger.io/terms/
-  title: Testovoe API
+  contact: {}
+  description: 'REST API для управления задачами внутри команд: роли, история изменений,
+    комментарии, кеш и SQL-отчёт.'
+  title: Task Manager API
   version: "1.0"
 paths:
   /login:
@@ -701,11 +695,6 @@ paths:
       tags:
       - analytics
 securityDefinitions:
-  Bearer:
-    description: Type "Bearer" followed by a space and JWT token.
-    in: header
-    name: Authorization
-    type: apiKey
   BearerAuth:
     description: 'JWT Bearer token. Формат: Bearer {token}'
     in: header

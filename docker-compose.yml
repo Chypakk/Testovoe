@@ -1,48 +1,51 @@
-version: '3.8'
-
 services:
-  app:
-    build: .
-    ports:
-      - "8080:8080"
+  mysql:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password
     environment:
-      - SERVER_PORT=8080
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=root
-      - DB_PASSWORD=password
-      - DB_NAME=testovoe
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-      - REDIS_DB=0
-      - JWT_SECRET=your-secret-key
-    depends_on:
-      - mysql
-      - redis
-    volumes:
-      - .:/app
-      - /app/vendor
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_USER=root
-      - POSTGRES_DB=testovoe
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: testovoe
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ppassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   redis:
-    image: redis:6.2-alpine
+    image: redis:7-alpine
     ports:
       - "6379:6379"
-    volumes:
-      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8080"
+      DB_DRIVER: mysql          
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: password
+      DB_NAME: testovoe
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      JWT_SECRET: your-secret-key
+    ports:
+      - "8080:8080"
 
 volumes:
   mysql_data:
-  redis_data:
