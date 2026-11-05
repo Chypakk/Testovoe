@@ -19,6 +19,9 @@ const topPerformersLimit = 5
 // TaskService — бизнес-логика задач: создание, фильтрация, обновление с оптимистичной
 // блокировкой и историей, комментарии, статистика команды.
 // Все операции доступны только участникам команды; чужие задачи не видны (404).
+// Права на редактирование задач реализованы здесь (см. canEditTask) согласно ТЗ:
+// owner/admin — любые задачи; создатель задачи — title/description/status/assignee;
+// исполнитель — только статус; остальные участники — только чтение.
 type TaskService struct {
 	tasks *repository.TaskRepo
 	teams *repository.TeamRepo
@@ -93,9 +96,39 @@ func (s *TaskService) List(ctx context.Context, userID uint, f repository.TaskFi
 	return s.tasks.List(ctx, f, userID)
 }
 
+// taskEditRights — результат проверки прав на редактирование задачи:
+// какие поля разрешено менять вызывающему пользователю.
+type taskEditRights struct {
+	canEditAll     bool // owner/admin команды: любые поля, включая переназначение
+	canChangeTitle bool // создатель задачи (или owner/admin)
+	canChangeDesc  bool
+	canChangeStat  bool
+	canReassign    bool // смена/снятие исполнителя
+}
+
+// resolveTaskRights вычисляет права пользователя на задачу по ролевой модели ТЗ:
+//   - owner/admin команды — редактируют любые задачи полностью;
+//   - создатель задачи — название, описание, статус, исполнитель (если тот участник команды);
+//   - исполнитель — только статус, переназначать задачу он не может;
+//   - остальные участники — задача доступна только для чтения.
+func resolveTaskRights(role string, task *models.Task, userID uint) taskEditRights {
+	isManager := role == RoleOwner || role == RoleAdmin
+	r := taskEditRights{}
+	switch {
+	case isManager:
+		return taskEditRights{canEditAll: true, canChangeTitle: true, canChangeDesc: true, canChangeStat: true, canReassign: true}
+	case task.CreatedBy == userID:
+		r.canChangeTitle, r.canChangeDesc, r.canChangeStat, r.canReassign = true, true, true, true
+	case task.AssigneeID != nil && *task.AssigneeID == userID:
+		r.canChangeStat = true
+	}
+	return r
+}
+
 // Update обновляет задачу с проверкой версии (оптимистичная блокировка).
 // expectedVersion=0 означает «проверить версию по текущей записи» (мягкий режим),
 // иначе при несовпадении возвращается ErrVersionConflict (HTTP 409).
+// Права: см. resolveTaskRights — попытка изменить запрещённое поле → ErrForbidden (403).
 func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req models.UpdateTaskRequest, expectedVersion int) (*models.Task, error) {
 	cur, err := s.tasks.GetVisible(ctx, taskID, userID)
 	if err != nil {
@@ -103,6 +136,19 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 			return nil, ErrTaskNotFound
 		}
 		return nil, err
+	}
+
+	// Роль пользователя в команде задачи (GetVisible уже гарантирует членство).
+	role, err := s.teams.GetMembership(ctx, cur.TeamID, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrForbidden
+		}
+		return nil, err
+	}
+	rights := resolveTaskRights(role, cur, userID)
+	if !rights.canChangeTitle && !rights.canChangeDesc && !rights.canChangeStat && !rights.canReassign {
+		return nil, ErrForbidden // участник, не создатель и не исполнитель
 	}
 
 	if expectedVersion != 0 && expectedVersion != cur.Version {
@@ -116,9 +162,15 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 		if t == "" {
 			return nil, ErrInvalidInput
 		}
+		if !rights.canChangeTitle {
+			return nil, ErrForbidden // исполнитель не может менять название
+		}
 		in.Title = &t
 	}
 	if req.Description != "" {
+		if !rights.canChangeDesc {
+			return nil, ErrForbidden // исполнитель не может менять описание
+		}
 		d := req.Description
 		in.Description = &d
 	}
@@ -127,9 +179,15 @@ func (s *TaskService) Update(ctx context.Context, taskID, userID uint, req model
 		if !validTaskStatuses[st] {
 			return nil, ErrInvalidInput
 		}
+		if !rights.canChangeStat {
+			return nil, ErrForbidden
+		}
 		in.Status = &st
 	}
 	if req.AssigneeID != nil {
+		if !rights.canReassign {
+			return nil, ErrForbidden // переназначение доступно создателю задачи и owner/admin
+		}
 		if *req.AssigneeID == 0 {
 			// снять исполнителя
 			in.SetAssignee = true
@@ -233,12 +291,18 @@ func (s *TaskService) Comments(ctx context.Context, taskID, userID uint) ([]mode
 
 // Stats возвращает статистику команды: распределение статусов, топ исполнителей,
 // среднее время закрытия, число комментариев.
+// По ТЗ аналитика доступна только создателю (owner) или администратору команды;
+// остальным — ErrForbidden (403), в том числе не-участникам (существование команды не раскрывается).
 func (s *TaskService) Stats(ctx context.Context, teamID, userID uint) (*models.TeamStats, error) {
-	if _, err := s.teams.GetMembership(ctx, teamID, userID); err != nil {
+	role, err := s.teams.GetMembership(ctx, teamID, userID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrForbidden
 		}
 		return nil, err
+	}
+	if role != RoleOwner && role != RoleAdmin {
+		return nil, ErrForbidden
 	}
 
 	counters, err := s.tasks.StatsAggregate(ctx, teamID)

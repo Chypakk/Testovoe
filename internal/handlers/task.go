@@ -114,6 +114,8 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 			respondError(w, r, http.StatusNotFound, "task not found")
 		case errors.Is(err, service.ErrVersionConflict):
 			respondError(w, r, http.StatusConflict, "task was modified by someone else; reload and retry")
+		case errors.Is(err, service.ErrForbidden):
+			respondError(w, r, http.StatusForbidden, "you cannot edit this task: owner/admin edit any task; the creator edits their tasks; the assignee may only change status")
 		case errors.Is(err, service.ErrInvalidInput):
 			respondError(w, r, http.StatusBadRequest, "invalid input: status must be todo|in_progress|done; assignee must be a team member; title cannot be empty")
 		default:
@@ -206,7 +208,7 @@ func (h *TaskHandler) GetTeamStats(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrForbidden):
-			respondError(w, r, http.StatusForbidden, "access denied")
+			respondError(w, r, http.StatusForbidden, "only team owner or admin can view analytics")
 		default:
 			respondError(w, r, http.StatusInternalServerError, "internal server error")
 		}
