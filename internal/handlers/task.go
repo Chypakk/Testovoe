@@ -71,6 +71,35 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 		f.AssigneeID = uint(id)
 	}
 
+	const defaultLimit = 20
+	const maxLimit = 100
+
+	limit := defaultLimit
+	if v := q.Get("limit"); v != "" {
+		l, err := strconv.Atoi(v)
+		if err != nil || l < 1 {
+			respondError(w, r, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		limit = l
+	}
+	if limit > maxLimit {
+		limit = maxLimit // защищаемся от слишком больших запросов
+	}
+
+	offset := 0
+	if v := q.Get("offset"); v != "" {
+		o, err := strconv.Atoi(v)
+		if err != nil || o < 0 {
+			respondError(w, r, http.StatusBadRequest, "invalid offset")
+			return
+		}
+		offset = o
+	}
+
+	f.Limit = limit
+	f.Offset = offset
+
 	userID := middleware.UserIDFromContext(r.Context())
 	tasks, err := h.svc.List(r.Context(), userID, f)
 	if err != nil {
@@ -85,7 +114,18 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	render.JSON(w, r, tasks)
+	total, err := h.svc.Count(r.Context(), userID, f)
+	if err != nil {
+		respondError(w, r, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	render.JSON(w, r, models.PaginatedTasksResponse{
+		Data:   tasks,
+		Limit:  limit,
+		Offset: offset,
+		Total:  total,
+	})
 }
 
 // UpdateTask обрабатывает PUT /api/v1/tasks/{id}.

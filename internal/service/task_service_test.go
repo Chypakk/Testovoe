@@ -315,7 +315,7 @@ func TestStatsRoleRestriction(t *testing.T) {
 		mock.ExpectQuery(regexp.QuoteMeta("COALESCE(SUM(CASE WHEN t.status = 'done'")).
 			WithArgs(teamID, 5).
 			WillReturnRows(sqlmock.NewRows([]string{"user_id", "name", "done_cnt"}).
-				AddRow(ownerID, "Ann", 3)))
+				AddRow(ownerID, "Ann", 3))
 
 		stats, err := svc.Stats(ctx, teamID, ownerID)
 		if err != nil {
@@ -339,7 +339,7 @@ func TestStatsRoleRestriction(t *testing.T) {
 			WillReturnRows(sqlmock.NewRows([]string{"cnt"}).AddRow(0))
 		mock.ExpectQuery(regexp.QuoteMeta("COALESCE(SUM(CASE WHEN t.status = 'done'")).
 			WithArgs(teamID, 5).
-			WillReturnRows(sqlmock.NewRows([]string{"user_id", "name", "done_cnt"})))
+			WillReturnRows(sqlmock.NewRows([]string{"user_id", "name", "done_cnt"}))
 
 		stats, err := svc.Stats(ctx, teamID, adminID)
 		if err != nil {

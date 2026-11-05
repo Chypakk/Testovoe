@@ -14,7 +14,7 @@ import (
 // Валидные статусы задачи.
 var validTaskStatuses = map[string]bool{"todo": true, "in_progress": true, "done": true}
 
-const topPerformersLimit = 5
+const topPerformersLimit = 3
 
 // TaskService — бизнес-логика задач: создание, фильтрация, обновление с оптимистичной
 // блокировкой и историей, комментарии, статистика команды.
@@ -94,6 +94,21 @@ func (s *TaskService) List(ctx context.Context, userID uint, f repository.TaskFi
 		}
 	}
 	return s.tasks.List(ctx, f, userID)
+}
+
+func (s *TaskService) Count(ctx context.Context, userID uint, f repository.TaskFilter) (int, error) {
+    if f.Status != "" && !validTaskStatuses[f.Status] {
+        return 0, ErrInvalidInput
+    }
+    if f.TeamID != 0 {
+        if _, err := s.teams.GetMembership(ctx, f.TeamID, userID); err != nil {
+            if errors.Is(err, sql.ErrNoRows) {
+                return 0, ErrForbidden
+            }
+            return 0, err
+        }
+    }
+    return s.tasks.Count(ctx, f, userID)
 }
 
 // taskEditRights — результат проверки прав на редактирование задачи:
@@ -291,43 +306,45 @@ func (s *TaskService) Comments(ctx context.Context, taskID, userID uint) ([]mode
 
 // Stats возвращает статистику команды: распределение статусов, топ исполнителей,
 // среднее время закрытия, число комментариев.
-// По ТЗ аналитика доступна только создателю (owner) или администратору команды;
-// остальным — ErrForbidden (403), в том числе не-участникам (существование команды не раскрывается).
+// По ТЗ аналитика доступна только создателю (owner) или администратору команды.
 func (s *TaskService) Stats(ctx context.Context, teamID, userID uint) (*models.TeamStats, error) {
-	role, err := s.teams.GetMembership(ctx, teamID, userID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrForbidden
-		}
-		return nil, err
-	}
-	if role != RoleOwner && role != RoleAdmin {
-		return nil, ErrForbidden
-	}
+    role, err := s.teams.GetMembership(ctx, teamID, userID)
+    if err != nil {
+        if errors.Is(err, sql.ErrNoRows) {
+            return nil, ErrForbidden
+        }
+        return nil, err
+    }
+    if role != RoleOwner && role != RoleAdmin {
+        return nil, ErrForbidden
+    }
 
-	counters, err := s.tasks.StatsAggregate(ctx, teamID)
-	if err != nil {
-		return nil, err
-	}
-	performers, err := s.tasks.TopPerformers(ctx, teamID, topPerformersLimit)
-	if err != nil {
-		return nil, err
-	}
+    // Теперь один вызов вместо двух
+    result, err := s.tasks.Stats(ctx, teamID)
+    if err != nil {
+        return nil, err
+    }
 
-	stats := &models.TeamStats{
-		TotalTasks: counters.TotalTasks,
-		TasksByStatus: map[string]int{
-			"todo":        counters.Todo,
-			"in_progress": counters.InProgress,
-			"done":        counters.Done,
-		},
-		TopPerformers: make([]models.TopPerformer, 0, len(performers)),
-		AvgCloseTime:  counters.AvgCloseSecs.Float64,
-		TotalComments: counters.TotalComments,
-	}
-	for _, p := range performers {
-		stats.TopPerformers = append(stats.TopPerformers,
-			models.TopPerformer{UserID: p.UserID, UserName: p.UserName, TaskCount: p.DoneCnt})
-	}
-	return stats, nil
+    stats := &models.TeamStats{
+        TotalTasks: result.TotalTasks,
+        TasksByStatus: map[string]int{
+            "todo":        result.Todo,
+            "in_progress": result.InProgress,
+            "done":        result.Done,
+        },
+        TopPerformers: make([]models.TopPerformer, 0, len(result.TopPerformers)),
+        AvgCloseTime:  result.AvgCloseSecs.Float64,
+        TotalComments: result.TotalComments,
+    }
+
+    for _, p := range result.TopPerformers {
+        stats.TopPerformers = append(stats.TopPerformers,
+            models.TopPerformer{
+                UserID:    p.UserID,
+                UserName:  p.UserName,
+                TaskCount: p.DoneCnt,
+            })
+    }
+
+    return stats, nil
 }
