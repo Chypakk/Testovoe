@@ -26,8 +26,10 @@ func SetupRoutes(db *sql.DB, jwtService *auth.JWTService) *chi.Mux {
 	// Репозитории и сервисы
 	userRepo := repository.NewUserRepo(db)
 	teamRepo := repository.NewTeamRepo(db)
+	taskRepo := repository.NewTaskRepo(db)
 	authService := service.NewAuthService(userRepo, jwtService)
 	teamService := service.NewTeamService(teamRepo, userRepo)
+	taskService := service.NewTaskService(taskRepo, teamRepo, userRepo)
 
 	// Public routes
 	authHandler := handlers.NewAuthHandler(authService)
@@ -46,8 +48,8 @@ func SetupRoutes(db *sql.DB, jwtService *auth.JWTService) *chi.Mux {
 		r.Get("/api/v1/teams/{id}/members", teamHandler.GetMembers)
 		r.Post("/api/v1/teams/{id}/invite", teamHandler.InviteUser)
 
-		// Task routes (TODO: реализовать в рамках раздела "API: задачи и отчет")
-		taskHandler := handlers.NewTaskHandler()
+		// Task routes
+		taskHandler := handlers.NewTaskHandler(taskService)
 		r.Post("/api/v1/tasks", taskHandler.CreateTask)
 		r.Get("/api/v1/tasks", taskHandler.GetTasks)
 		r.Put("/api/v1/tasks/{id}", taskHandler.UpdateTask)
