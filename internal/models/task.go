@@ -4,6 +4,8 @@ import (
 	"time"
 )
 
+// Task represents a task in the system
+// @Description Task information and status
 type Task struct {
 	ID          uint       `json:"id" db:"id"`
 	TeamID      uint       `json:"team_id" db:"team_id"`
@@ -18,6 +20,8 @@ type Task struct {
 	Version     int        `json:"version" db:"version"`
 }
 
+// CreateTaskRequest represents the request for creating a new task
+// @Request to create a new task in a team
 type CreateTaskRequest struct {
 	TeamID      uint   `json:"team_id" validate:"required"`
 	Title       string `json:"title" validate:"required"`
@@ -26,6 +30,8 @@ type CreateTaskRequest struct {
 	AssigneeID  *uint  `json:"assignee_id"`
 }
 
+// UpdateTaskRequest represents the request for updating a task
+// @Request to update an existing task
 type UpdateTaskRequest struct {
 	Title       string  `json:"title"`
 	Description string  `json:"description"`
@@ -33,6 +39,8 @@ type UpdateTaskRequest struct {
 	AssigneeID  *uint   `json:"assignee_id"`
 }
 
+// TaskHistory represents a history entry for task changes
+// @Description Task change history with version information
 type TaskHistory struct {
 	ID        uint      `json:"id" db:"id"`
 	TaskID    uint      `json:"task_id" db:"task_id"`
@@ -41,6 +49,8 @@ type TaskHistory struct {
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
+// TaskComment represents a comment on a task
+// @Description Comment content and metadata
 type TaskComment struct {
 	ID        uint      `json:"id" db:"id"`
 	TaskID    uint      `json:"task_id" db:"task_id"`
@@ -49,10 +59,14 @@ type TaskComment struct {
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
+// CreateCommentRequest represents the request for creating a task comment
+// @Request to add a comment to a task
 type CreateCommentRequest struct {
 	Content string `json:"content" validate:"required"`
 }
 
+// TeamStats represents team statistics and analytics
+// @Description Team performance metrics and statistics
 type TeamStats struct {
 	TotalTasks    int            `json:"total_tasks"`
 	TasksByStatus map[string]int `json:"tasks_by_status"`
@@ -61,6 +75,8 @@ type TeamStats struct {
 	TotalComments int            `json:"total_comments"`
 }
 
+// TopPerformer represents a top performing user in a team
+// @Description User with highest task completion rate
 type TopPerformer struct {
 	UserID    uint   `json:"user_id"`
 	UserName  string `json:"user_name"`

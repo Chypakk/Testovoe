@@ -24,6 +24,10 @@ func SetupRoutes(db *sql.DB, jwtService *auth.JWTService, cfg *configs.Config) *
 		render.JSON(w, r, map[string]string{"status": "ok"})
 	})
 
+	// Swagger documentation
+	swaggerHandler := handlers.NewSwaggerHandler()
+	swaggerHandler.RegisterSwaggerRoutes(r)
+
 	// Репозитории и сервисы
 	taskCache := cache.NewTaskCache(cfg.Redis) // Используем фабрику
 	userRepo := repository.NewUserRepo(db)

@@ -21,6 +21,17 @@ func NewAuthHandler(svc *service.AuthService) *AuthHandler {
 }
 
 // Register обрабатывает POST /api/v1/register.
+//
+// @Summary Регистрация пользователя
+// @Description Создаёт нового пользователя
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body models.RegisterRequest true "Данные регистрации"
+// @Success 201 {object} models.User
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 409 {object} models.ErrorResponse
+// @Router /register [post]
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req models.RegisterRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -45,7 +56,18 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, user)
 }
 
-// Login обрабатывает POST /api/v1/login, выдает JWT.
+// Login обрабатывает POST /api/v1/login.
+//
+// @Summary Вход пользователя
+// @Description Аутентификация по email и паролю, возвращает JWT
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body models.LoginRequest true "Данные для входа"
+// @Success 200 {object} models.LoginResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Router /login [post]
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req models.LoginRequest
 	if err := decodeJSON(r, &req); err != nil {

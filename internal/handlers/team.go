@@ -23,6 +23,18 @@ func NewTeamHandler(svc *service.TeamService) *TeamHandler {
 }
 
 // CreateTeam обрабатывает POST /api/v1/teams.
+//
+// @Summary Создание команды
+// @Description Текущий пользователь становится владельцем команды
+// @Tags teams
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body models.CreateTeamRequest true "Данные команды"
+// @Success 201 {object} models.Team
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Router /teams [post]
 func (h *TeamHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateTeamRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -46,7 +58,16 @@ func (h *TeamHandler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, team)
 }
 
-// GetTeams обрабатывает GET /api/v1/teams — только команды текущего пользователя.
+// GetTeams обрабатывает GET /api/v1/teams.
+//
+// @Summary Список команд пользователя
+// @Description Возвращает команды, где пользователь является участником или создателем
+// @Tags teams
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} models.Team
+// @Failure 401 {object} models.ErrorResponse
+// @Router /teams [get]
 func (h *TeamHandler) GetTeams(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 
@@ -60,6 +81,21 @@ func (h *TeamHandler) GetTeams(w http.ResponseWriter, r *http.Request) {
 }
 
 // InviteUser обрабатывает POST /api/v1/teams/{id}/invite.
+//
+// @Summary Пригласить пользователя в команду
+// @Description Добавляет пользователя в команду или обновляет его роль. Доступно только owner или admin
+// @Tags teams
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "ID команды"
+// @Param request body models.InviteRequest true "Данные приглашения"
+// @Success 201 {object} models.TeamMemberWithUser
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Router /teams/{id}/invite [post]
 func (h *TeamHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
 	teamID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || teamID == 0 {
@@ -94,6 +130,17 @@ func (h *TeamHandler) InviteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetMembers обрабатывает GET /api/v1/teams/{id}/members.
+//
+// @Summary Участники команды
+// @Description Возвращает состав команды. Доступно только участникам
+// @Tags teams
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "ID команды"
+// @Success 200 {array} models.TeamMemberWithUser
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Router /teams/{id}/members [get]
 func (h *TeamHandler) GetMembers(w http.ResponseWriter, r *http.Request) {
 	teamID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || teamID == 0 {

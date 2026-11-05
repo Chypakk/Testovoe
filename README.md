@@ -22,6 +22,41 @@ REST API сервис для управления задачами внутри 
 - Git
 - Swagger/OpenAPI
 
+## Swagger документация
+
+Для генерации и просмотра Swagger документации:
+
+1. Установите swag:
+```bash
+go install github.com/swaggo/swag/cmd/swag@latest
+```
+
+2. Сгенерируйте документацию:
+```bash
+# Windows
+.\scripts\generate-swagger.ps1
+
+# Linux/macOS
+./scripts/generate-swagger.sh
+```
+
+3. Запустите сервер:
+```bash
+go run cmd/server/main.go
+```
+
+4. Откройте в браузере:
+```
+http://localhost:8080/swagger/index.html
+```
+
+### Ручная генерация
+
+Вы также можете сгенерировать документацию вручную:
+```bash
+swag init -g cmd/server/main.go -o docs/
+```
+
 ## Структура проекта
 
 ```

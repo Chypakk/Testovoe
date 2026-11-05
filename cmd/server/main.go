@@ -1,3 +1,11 @@
+// @title Task Manager API
+// @version 1.0
+// @description REST API для управления задачами внутри команд: роли, история изменений, комментарии, кеш и SQL-отчёт.
+// @BasePath /api/v1
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT Bearer token. Формат: Bearer {token}
 package main
 
 import (

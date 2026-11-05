@@ -1,0 +1,714 @@
+basePath: /api/v1
+definitions:
+  testovoe_internal_models.CreateCommentRequest:
+    properties:
+      content:
+        type: string
+    required:
+    - content
+    type: object
+  testovoe_internal_models.CreateTaskRequest:
+    properties:
+      assignee_id:
+        type: integer
+      description:
+        type: string
+      status:
+        enum:
+        - todo
+        - in_progress
+        - done
+        type: string
+      team_id:
+        type: integer
+      title:
+        type: string
+    required:
+    - status
+    - team_id
+    - title
+    type: object
+  testovoe_internal_models.CreateTeamRequest:
+    properties:
+      name:
+        type: string
+    required:
+    - name
+    type: object
+  testovoe_internal_models.ErrorResponse:
+    description: Error response structure
+    properties:
+      error:
+        type: string
+    type: object
+  testovoe_internal_models.InviteRequest:
+    properties:
+      email:
+        type: string
+      role:
+        description: admin или member (owner не выдается через приглашение)
+        type: string
+      user_id:
+        type: integer
+    type: object
+  testovoe_internal_models.LoginRequest:
+    description: User login credentials
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  testovoe_internal_models.LoginResponse:
+    properties:
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/testovoe_internal_models.User'
+    type: object
+  testovoe_internal_models.PaginatedTasksResponse:
+    description: Paginated response containing tasks list and pagination metadata
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/testovoe_internal_models.Task'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  testovoe_internal_models.RegisterRequest:
+    description: User registration data
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        minLength: 6
+        type: string
+    required:
+    - email
+    - name
+    - password
+    type: object
+  testovoe_internal_models.Task:
+    description: Task information and status
+    properties:
+      assignee_id:
+        type: integer
+      closed_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      description:
+        type: string
+      id:
+        type: integer
+      status:
+        description: todo, in_progress, done
+        type: string
+      team_id:
+        type: integer
+      title:
+        type: string
+      updated_at:
+        type: string
+      version:
+        type: integer
+    type: object
+  testovoe_internal_models.TaskComment:
+    description: Comment content and metadata
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      task_id:
+        type: integer
+      user_id:
+        type: integer
+    type: object
+  testovoe_internal_models.TaskHistory:
+    description: Task change history with version information
+    properties:
+      changed_by:
+        type: integer
+      changes:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      task_id:
+        type: integer
+    type: object
+  testovoe_internal_models.Team:
+    description: Team information and metadata
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: integer
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  testovoe_internal_models.TeamMemberWithUser:
+    properties:
+      role:
+        type: string
+      team_id:
+        type: integer
+      user_email:
+        type: string
+      user_id:
+        type: integer
+      user_name:
+        type: string
+    type: object
+  testovoe_internal_models.TeamStats:
+    description: Team performance metrics and statistics
+    properties:
+      avg_close_time:
+        type: number
+      tasks_by_status:
+        additionalProperties:
+          type: integer
+        type: object
+      top_performers:
+        items:
+          $ref: '#/definitions/testovoe_internal_models.TopPerformer'
+        type: array
+      total_comments:
+        type: integer
+      total_tasks:
+        type: integer
+    type: object
+  testovoe_internal_models.TopPerformer:
+    description: User with highest task completion rate
+    properties:
+      task_count:
+        type: integer
+      user_id:
+        type: integer
+      user_name:
+        type: string
+    type: object
+  testovoe_internal_models.User:
+    description: User account information
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: API for task management system
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Testovoe API
+  version: "1.0"
+paths:
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Аутентификация по email и паролю, возвращает JWT
+      parameters:
+      - description: Данные для входа
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/testovoe_internal_models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.LoginResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      summary: Вход пользователя
+      tags:
+      - auth
+  /register:
+    post:
+      consumes:
+      - application/json
+      description: Создаёт нового пользователя
+      parameters:
+      - description: Данные регистрации
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/testovoe_internal_models.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.User'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      summary: Регистрация пользователя
+      tags:
+      - auth
+  /tasks:
+    get:
+      description: Возвращает задачи указанной команды. Требуется участие в команде
+      parameters:
+      - description: ID команды
+        in: query
+        name: team_id
+        required: true
+        type: integer
+      - description: Статус задачи
+        enum:
+        - todo
+        - in_progress
+        - done
+        in: query
+        name: status
+        type: string
+      - description: ID исполнителя
+        in: query
+        name: assignee_id
+        type: integer
+      - default: 20
+        description: Лимит записей
+        in: query
+        maximum: 100
+        name: limit
+        type: integer
+      - default: 0
+        description: Смещение
+        in: query
+        minimum: 0
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.PaginatedTasksResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Список задач команды
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      description: Создаёт задачу в команде. Доступно любому участнику команды
+      parameters:
+      - description: Данные задачи
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/testovoe_internal_models.CreateTaskRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.Task'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Создание задачи
+      tags:
+      - tasks
+  /tasks/{id}:
+    put:
+      consumes:
+      - application/json
+      description: Обновляет задачу с проверкой прав и записью истории
+      parameters:
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Данные обновления
+        in: body
+        name: request
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.Task'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Обновление задачи
+      tags:
+      - tasks
+  /tasks/{id}/comments:
+    get:
+      description: Возвращает список комментариев задачи. Доступно участникам команды
+        задачи
+      parameters:
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/testovoe_internal_models.TaskComment'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Комментарии задачи
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      description: Добавляет комментарий к задаче. Доступно участникам команды задачи
+      parameters:
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Текст комментария
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/testovoe_internal_models.CreateCommentRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.TaskComment'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Добавить комментарий
+      tags:
+      - tasks
+  /tasks/{id}/history:
+    get:
+      description: Возвращает историю изменений задачи. Доступно участникам команды
+        задачи
+      parameters:
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/testovoe_internal_models.TaskHistory'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: История задачи
+      tags:
+      - tasks
+  /teams:
+    get:
+      description: Возвращает команды, где пользователь является участником или создателем
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/testovoe_internal_models.Team'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Список команд пользователя
+      tags:
+      - teams
+    post:
+      consumes:
+      - application/json
+      description: Текущий пользователь становится владельцем команды
+      parameters:
+      - description: Данные команды
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/testovoe_internal_models.CreateTeamRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.Team'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Создание команды
+      tags:
+      - teams
+  /teams/{id}/invite:
+    post:
+      consumes:
+      - application/json
+      description: Добавляет пользователя в команду или обновляет его роль. Доступно
+        только owner или admin
+      parameters:
+      - description: ID команды
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Данные приглашения
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/testovoe_internal_models.InviteRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.TeamMemberWithUser'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Пригласить пользователя в команду
+      tags:
+      - teams
+  /teams/{id}/members:
+    get:
+      description: Возвращает состав команды. Доступно только участникам
+      parameters:
+      - description: ID команды
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/testovoe_internal_models.TeamMemberWithUser'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Участники команды
+      tags:
+      - teams
+  /teams/{team_id}/stats:
+    get:
+      description: 'Возвращает статистику команды: задачи по статусам, топ-3 исполнителей,
+        среднее время закрытия, количество комментариев. Доступно только owner или
+        admin'
+      parameters:
+      - description: ID команды
+        in: path
+        name: team_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.TeamStats'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/testovoe_internal_models.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: SQL-отчёт по команде
+      tags:
+      - analytics
+securityDefinitions:
+  Bearer:
+    description: Type "Bearer" followed by a space and JWT token.
+    in: header
+    name: Authorization
+    type: apiKey
+  BearerAuth:
+    description: 'JWT Bearer token. Формат: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

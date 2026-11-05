@@ -24,6 +24,19 @@ func NewTaskHandler(svc *service.TaskService) *TaskHandler {
 }
 
 // CreateTask обрабатывает POST /api/v1/tasks.
+//
+// @Summary Создание задачи
+// @Description Создаёт задачу в команде. Доступно любому участнику команды
+// @Tags tasks
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param request body models.CreateTaskRequest true "Данные задачи"
+// @Success 201 {object} models.Task
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Router /tasks [post]
 func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateTaskRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -49,7 +62,23 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, task)
 }
 
-// GetTasks обрабатывает GET /api/v1/tasks?team_id=1&status=todo&assignee_id=5&limit=20&offset=0.
+// GetTasks обрабатывает GET /api/v1/tasks.
+//
+// @Summary Список задач команды
+// @Description Возвращает задачи указанной команды. Требуется участие в команде
+// @Tags tasks
+// @Security BearerAuth
+// @Produce json
+// @Param team_id query int true "ID команды"
+// @Param status query string false "Статус задачи" Enums(todo, in_progress, done)
+// @Param assignee_id query int false "ID исполнителя"
+// @Param limit query int false "Лимит записей" default(20) maximum(100)
+// @Param offset query int false "Смещение" default(0) minimum(0)
+// @Success 200 {object} models.PaginatedTasksResponse
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Router /tasks [get]
 func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
@@ -146,7 +175,22 @@ func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateTask обрабатывает PUT /api/v1/tasks/{id}.
-// Поле version в теле — опциональная оптимистичная блокировка (409 при несовпадении).
+//
+// @Summary Обновление задачи
+// @Description Обновляет задачу с проверкой прав и записью истории
+// @Tags tasks
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "ID задачи"
+// @Param request body object true "Данные обновления"
+// @Success 200 {object} models.Task
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Failure 409 {object} models.ErrorResponse
+// @Router /tasks/{id} [put]
 func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	taskID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || taskID == 0 {
@@ -185,6 +229,17 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTaskHistory обрабатывает GET /api/v1/tasks/{id}/history.
+//
+// @Summary История задачи
+// @Description Возвращает историю изменений задачи. Доступно участникам команды задачи
+// @Tags tasks
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "ID задачи"
+// @Success 200 {array} models.TaskHistory
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Router /tasks/{id}/history [get]
 func (h *TaskHandler) GetTaskHistory(w http.ResponseWriter, r *http.Request) {
 	taskID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || taskID == 0 {
@@ -203,6 +258,20 @@ func (h *TaskHandler) GetTaskHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 // CreateComment обрабатывает POST /api/v1/tasks/{id}/comments.
+//
+// @Summary Добавить комментарий
+// @Description Добавляет комментарий к задаче. Доступно участникам команды задачи
+// @Tags tasks
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "ID задачи"
+// @Param request body models.CreateCommentRequest true "Текст комментария"
+// @Success 201 {object} models.TaskComment
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Router /tasks/{id}/comments [post]
 func (h *TaskHandler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	taskID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || taskID == 0 {
@@ -235,6 +304,17 @@ func (h *TaskHandler) CreateComment(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetComments обрабатывает GET /api/v1/tasks/{id}/comments.
+//
+// @Summary Комментарии задачи
+// @Description Возвращает список комментариев задачи. Доступно участникам команды задачи
+// @Tags tasks
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "ID задачи"
+// @Success 200 {array} models.TaskComment
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 404 {object} models.ErrorResponse
+// @Router /tasks/{id}/comments [get]
 func (h *TaskHandler) GetComments(w http.ResponseWriter, r *http.Request) {
 	taskID, err := strconv.ParseUint(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || taskID == 0 {
@@ -253,6 +333,18 @@ func (h *TaskHandler) GetComments(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetTeamStats обрабатывает GET /api/v1/teams/{team_id}/stats.
+//
+// @Summary SQL-отчёт по команде
+// @Description Возвращает статистику команды: задачи по статусам, топ-3 исполнителей, среднее время закрытия, количество комментариев. Доступно только owner или admin
+// @Tags analytics
+// @Security BearerAuth
+// @Produce json
+// @Param team_id path int true "ID команды"
+// @Success 200 {object} models.TeamStats
+// @Failure 400 {object} models.ErrorResponse
+// @Failure 401 {object} models.ErrorResponse
+// @Failure 403 {object} models.ErrorResponse
+// @Router /teams/{team_id}/stats [get]
 func (h *TaskHandler) GetTeamStats(w http.ResponseWriter, r *http.Request) {
 	teamID, err := strconv.ParseUint(chi.URLParam(r, "team_id"), 10, 64)
 	if err != nil || teamID == 0 {

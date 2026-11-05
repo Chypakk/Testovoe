@@ -1,10 +1,13 @@
 package models
 
-// Ответы ошибок API.
+// ErrorResponse represents an error response
+// @Description Error response structure
 type ErrorResponse struct {
-	Error string `json:"error"`
+    Error string `json:"error"`
 }
 
+// PaginatedTasks represents a paginated response for tasks
+// @Description Paginated response containing tasks list and pagination metadata
 type PaginatedTasksResponse struct {
     Data   []Task `json:"data"`
     Limit  int    `json:"limit"`
