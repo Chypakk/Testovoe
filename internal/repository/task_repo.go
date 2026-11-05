@@ -403,7 +403,7 @@ func (r *TaskRepo) Comments(ctx context.Context, taskID, userID uint) ([]models.
 // Stats возвращает полную статистику команды одним CTE-запросом.
 // Метрики: задачи по статусам, топ-3 исполнителя по закрытым задачам за 30 дней,
 // среднее время закрытия, количество комментариев.
-func (r *TaskRepo) Stats(ctx context.Context, teamID uint) (*TeamStatsResult, error) {
+func (r *TaskRepo) Stats(ctx context.Context, teamID uint, topPerformersLimit int) (*TeamStatsResult, error) {
     // Разные диалекты для вычисления среднего времени закрытия и фильтра по датам
     var avgExpr, dateFilter string
     if r.dia.IsPostgres {
@@ -416,7 +416,6 @@ func (r *TaskRepo) Stats(ctx context.Context, teamID uint) (*TeamStatsResult, er
         dateFilter = `t.closed_at >= NOW() - INTERVAL 30 DAY`
     }
 
-    // Один CTE-запрос, объединяющий все метрики
     query := `
 WITH task_stats AS (
     SELECT 
@@ -448,24 +447,19 @@ top_performers AS (
     WHERE tm.team_id = ?
     GROUP BY tm.user_id, u.name
     ORDER BY done_cnt DESC, tm.user_id ASC
-    LIMIT 3
+    LIMIT ?
 )
 SELECT 
-    ts.total_tasks, 
-    ts.todo, 
-    ts.in_progress, 
-    ts.done, 
-    ts.avg_close_secs,
+    ts.total_tasks, ts.todo, ts.in_progress, ts.done, ts.avg_close_secs,
     cs.total_comments,
-    tp.user_id AS performer_id, 
-    tp.name AS performer_name, 
-    tp.done_cnt AS performer_done_cnt
+    tp.user_id, tp.name, tp.done_cnt
 FROM task_stats ts
 CROSS JOIN comment_stats cs
 LEFT JOIN top_performers tp ON TRUE
 `
 
-    rows, err := r.db.QueryContext(ctx, r.dia.Ph(query), teamID, teamID, teamID)
+    // Передаём limit как параметр
+    rows, err := r.db.QueryContext(ctx, r.dia.Ph(query), teamID, teamID, teamID, topPerformersLimit)
     if err != nil {
         return nil, err
     }
@@ -496,7 +490,6 @@ LEFT JOIN top_performers tp ON TRUE
             return nil, err
         }
 
-        // Агрегаты берем из первой строки (они одинаковые во всех строках)
         if firstRow {
             result.TotalTasks = totalTasks
             result.Todo = todo
@@ -507,7 +500,6 @@ LEFT JOIN top_performers tp ON TRUE
             firstRow = false
         }
 
-        // Топ-исполнителей собираем из всех строк
         if performerID.Valid {
             result.TopPerformers = append(result.TopPerformers, TopPerformerRow{
                 UserID:   uint(performerID.Int64),
@@ -517,11 +509,7 @@ LEFT JOIN top_performers tp ON TRUE
         }
     }
 
-    if err := rows.Err(); err != nil {
-        return nil, err
-    }
-
-    return result, nil
+    return result, rows.Err()
 }
 
 // TopPerformerRow — строка рейтинга исполнителей.

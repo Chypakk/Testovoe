@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/render"
 
 	"testovoe/internal/auth"
+	"testovoe/internal/cache"
 	"testovoe/internal/handlers"
 	"testovoe/internal/repository"
 	"testovoe/internal/service"
@@ -24,12 +25,13 @@ func SetupRoutes(db *sql.DB, jwtService *auth.JWTService) *chi.Mux {
 	})
 
 	// Репозитории и сервисы
+	cache := cache.NewInMemoryCache()
 	userRepo := repository.NewUserRepo(db)
 	teamRepo := repository.NewTeamRepo(db)
 	taskRepo := repository.NewTaskRepo(db)
 	authService := service.NewAuthService(userRepo, jwtService)
 	teamService := service.NewTeamService(teamRepo, userRepo)
-	taskService := service.NewTaskService(taskRepo, teamRepo, userRepo)
+	taskService := service.NewTaskService(taskRepo, teamRepo, userRepo, cache)
 
 	// Public routes
 	authHandler := handlers.NewAuthHandler(authService)

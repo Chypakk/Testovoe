@@ -10,6 +10,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
+	"testovoe/internal/cache"
 	"testovoe/internal/models"
 	"testovoe/internal/repository"
 )
@@ -22,7 +23,7 @@ func newMockServices(t *testing.T) (*TaskService, sqlmock.Sqlmock, func()) {
 	if err != nil {
 		t.Fatalf("sqlmock: %v", err)
 	}
-	return NewTaskService(repository.NewTaskRepo(db), repository.NewTeamRepo(db), repository.NewUserRepo(db)),
+	return NewTaskService(repository.NewTaskRepo(db), repository.NewTeamRepo(db), repository.NewUserRepo(db), cache.NewInMemoryCache()),
 		mock,
 		func() { _ = db.Close() }
 }

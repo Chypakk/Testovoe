@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"testovoe/internal/cache"
 	"testovoe/internal/models"
 	"testovoe/internal/repository"
 )
@@ -26,10 +27,11 @@ type TaskService struct {
 	tasks *repository.TaskRepo
 	teams *repository.TeamRepo
 	users *repository.UserRepo
+	cache cache.Cache
 }
 
-func NewTaskService(tasks *repository.TaskRepo, teams *repository.TeamRepo, users *repository.UserRepo) *TaskService {
-	return &TaskService{tasks: tasks, teams: teams, users: users}
+func NewTaskService(tasks *repository.TaskRepo, teams *repository.TeamRepo, users *repository.UserRepo, cache cache.Cache) *TaskService {
+	return &TaskService{tasks: tasks, teams: teams, users: users, cache: cache}
 }
 
 // Create создает задачу в команде. AssigneeID должен быть участником этой команды.
@@ -320,7 +322,7 @@ func (s *TaskService) Stats(ctx context.Context, teamID, userID uint) (*models.T
     }
 
     // Теперь один вызов вместо двух
-    result, err := s.tasks.Stats(ctx, teamID)
+    result, err := s.tasks.Stats(ctx, teamID, topPerformersLimit)
     if err != nil {
         return nil, err
     }
