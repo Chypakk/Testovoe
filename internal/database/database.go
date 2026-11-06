@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"testovoe/internal/configs"
+	"testovoe/internal/logger"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -27,6 +28,13 @@ type Database struct {
 
 func NewDatabase(cfg configs.DatabaseConfig) (*Database, error) {
 	driver := cfg.NormalizedDriver()
+
+	logger.Info("Connecting to database", 
+		"driver", driver,
+		"host", cfg.Host,
+		"port", cfg.Port,
+		"db", cfg.Name,
+	)
 
 	var sqlDriverName string
 	var dsn string
@@ -60,12 +68,21 @@ func NewDatabase(cfg configs.DatabaseConfig) (*Database, error) {
 		dsn = u.String()
 
 	default:
-		return nil, fmt.Errorf("unsupported database driver: %s", cfg.Driver)
+		err := fmt.Errorf("unsupported database driver: %s", cfg.Driver)
+		logger.Error("Unsupported database driver", err,
+			"driver", cfg.Driver,
+		)
+		return nil, err
 	}
 
 	sqlDB, err := sql.Open(sqlDriverName, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		err = fmt.Errorf("failed to open database: %w", err)
+		logger.Error("Failed to open database", err,
+			"driver", sqlDriverName,
+			"dsn", dsn,
+		)
+		return nil, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -73,12 +90,21 @@ func NewDatabase(cfg configs.DatabaseConfig) (*Database, error) {
 
 	if err := sqlDB.PingContext(ctx); err != nil {
 		_ = sqlDB.Close()
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		err = fmt.Errorf("failed to ping database: %w", err)
+		logger.Error("Failed to ping database", err,
+			"driver", sqlDriverName,
+		)
+		return nil, err
 	}
 
 	sqlDB.SetMaxOpenConns(25)
 	sqlDB.SetMaxIdleConns(25)
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+
+	logger.Info("Database connection established",
+		"driver", sqlDriverName,
+		"max_open_conns", sqlDB.Stats().OpenConnections,
+	)
 
 	return &Database{
 		DB:     sqlDB,
@@ -106,11 +132,26 @@ func (d *Database) runMigrations(up bool) error {
 	migrationsPath := filepath.Join(".", "migrations", d.Driver)
 	sourceURL := "file://" + filepath.ToSlash(migrationsPath)
 
+	direction := "up"
+	if !up {
+		direction = "down"
+	}
+
+	logger.Info("Running database migrations",
+		"driver", d.Driver,
+		"direction", direction,
+		"migrations_path", migrationsPath,
+	)
+
 	switch d.Driver {
 	case "postgres":
 		driver, err := pgmigrate.WithInstance(d.DB, &pgmigrate.Config{})
 		if err != nil {
-			return fmt.Errorf("failed to create postgres migration driver: %w", err)
+			err = fmt.Errorf("failed to create postgres migration driver: %w", err)
+			logger.Error("Failed to create postgres migration driver", err,
+				"driver", d.Driver,
+			)
+			return err
 		}
 
 		m, err := migrate.NewWithDatabaseInstance(
@@ -119,7 +160,12 @@ func (d *Database) runMigrations(up bool) error {
 			driver,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to create migrate instance: %w", err)
+			err = fmt.Errorf("failed to create migrate instance: %w", err)
+			logger.Error("Failed to create migrate instance", err,
+				"driver", d.Driver,
+				"source", sourceURL,
+			)
+			return err
 		}
 		// defer m.Close()
 
@@ -128,7 +174,11 @@ func (d *Database) runMigrations(up bool) error {
 	case "mysql":
 		driver, err := mysqlmigrate.WithInstance(d.DB, &mysqlmigrate.Config{})
 		if err != nil {
-			return fmt.Errorf("failed to create mysql migration driver: %w", err)
+			err = fmt.Errorf("failed to create mysql migration driver: %w", err)
+			logger.Error("Failed to create mysql migration driver", err,
+				"driver", d.Driver,
+			)
+			return err
 		}
 
 		m, err := migrate.NewWithDatabaseInstance(
@@ -137,28 +187,44 @@ func (d *Database) runMigrations(up bool) error {
 			driver,
 		)
 		if err != nil {
-			return fmt.Errorf("failed to create migrate instance: %w", err)
+			err = fmt.Errorf("failed to create migrate instance: %w", err)
+			logger.Error("Failed to create migrate instance", err,
+				"driver", d.Driver,
+				"source", sourceURL,
+			)
+			return err
 		}
 		// defer m.Close()
 
 		return applyMigrations(m, up)
 
 	default:
-		return fmt.Errorf("unsupported migration driver: %s", d.Driver)
+		err := fmt.Errorf("unsupported migration driver: %s", d.Driver)
+		logger.Error("Unsupported migration driver", err,
+			"driver", d.Driver,
+		)
+		return err
 	}
 }
 
 func applyMigrations(m *migrate.Migrate, up bool) error {
 	if up {
+		logger.Info("Applying migrations")
 		if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-			return fmt.Errorf("failed to apply migrations: %w", err)
+			err = fmt.Errorf("failed to apply migrations: %w", err)
+			logger.Error("Failed to apply migrations", err)
+			return err
 		}
+		logger.Info("Migrations applied successfully")
 		return nil
 	}
 
+	logger.Info("Rolling back migrations")
 	if err := m.Down(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("failed to rollback migrations: %w", err)
+		err = fmt.Errorf("failed to rollback migrations: %w", err)
+		logger.Error("Failed to rollback migrations", err)
+		return err
 	}
-
+	logger.Info("Migrations rolled back successfully")
 	return nil
 }

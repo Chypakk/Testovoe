@@ -9,43 +9,46 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
 	"testovoe/internal/auth"
 	"testovoe/internal/configs"
 	"testovoe/internal/database"
+	"testovoe/internal/logger"
 	"testovoe/internal/routes"
 )
 
 func main() {
+	// Инициализируем логгер
+	logger.Init()
+
 	// Загружаем .env (если не найден — используем переменные окружения/значения по умолчанию)
 	if err := configs.LoadDotEnv(".env"); err != nil {
-		log.Printf("Warning: failed to load .env file: %v", err)
+		logger.Error("Failed to load .env file", err)
 	}
 
 	cfg, err := configs.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		logger.Error("Failed to load config", err)
 	}
 
 	db, err := database.NewDatabase(cfg.Database)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.Error("Failed to connect to database", err)
 	}
 	defer db.Close()
 
 	if err := db.RunMigrations(); err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
+		logger.Error("Failed to run migrations", err)
 	}
-	log.Println("Migrations applied successfully")
+	logger.Info("Migrations applied successfully")
 
 	jwtService := auth.NewJWTService(cfg.JWT.Secret)
 	r := routes.SetupRoutes(db.GetDB(), jwtService, cfg) // Передаем cfg
 
 	addr := ":" + cfg.Server.Port
-	log.Printf("Server starting on %s", addr)
+	logger.Info("Server starting on "+addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
-		log.Fatalf("Server failed: %v", err)
+		logger.Error("Server failed", err)
 	}
 }

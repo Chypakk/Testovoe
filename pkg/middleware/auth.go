@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/render"
 
 	"testovoe/internal/auth"
+	"testovoe/internal/logger"
 	"testovoe/internal/models"
 )
 
@@ -28,6 +29,11 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
+			logger.Warn("Missing Authorization header",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"ip", r.RemoteAddr,
+			)
 			render.Status(r, http.StatusUnauthorized)
 			render.JSON(w, r, models.ErrorResponse{Error: "Authorization header required"})
 			return
@@ -35,6 +41,11 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		if tokenString == authHeader {
+			logger.Warn("Invalid Authorization header format",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"ip", r.RemoteAddr,
+			)
 			render.Status(r, http.StatusUnauthorized)
 			render.JSON(w, r, models.ErrorResponse{Error: "Bearer token required"})
 			return
@@ -42,10 +53,23 @@ func (m *AuthMiddleware) RequireAuth(next http.Handler) http.Handler {
 
 		claims, err := m.jwt.ValidateToken(tokenString)
 		if err != nil || claims.UserID == 0 {
+			logger.Error("Invalid or expired token", err,
+				"method", r.Method,
+				"path", r.URL.Path,
+				"ip", r.RemoteAddr,
+				"user_id", claims.UserID,
+			)
 			render.Status(r, http.StatusUnauthorized)
 			render.JSON(w, r, models.ErrorResponse{Error: "invalid or expired token"})
 			return
 		}
+
+		logger.Info("User authenticated successfully",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"ip", r.RemoteAddr,
+			"user_id", claims.UserID,
+		)
 
 		ctx := context.WithValue(r.Context(), userIDKey, claims.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))

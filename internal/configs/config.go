@@ -3,11 +3,12 @@ package configs
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/caarlos0/env/v11"
 	"github.com/joho/godotenv"
+
+	"testovoe/internal/logger"
 )
 
 type ServerConfig struct {
@@ -52,7 +53,7 @@ type Config struct {
 
 func LoadConfig() (*Config, error) {
 	if err := godotenv.Load(".env"); err != nil {
-		log.Printf("Warning: failed to load .env file: %v", err)
+		logger.Warn("Failed to load .env file")
 	}
 
 	cfg := &Config{}
@@ -77,5 +78,6 @@ func LoadConfig() (*Config, error) {
 		cfg.Server.Port = "8080"
 	}
 
+	logger.Info("Configuration loaded successfully")
 	return cfg, nil
 }

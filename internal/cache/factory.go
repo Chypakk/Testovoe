@@ -2,14 +2,21 @@ package cache
 
 import (
 	"context"
-	"log"
-	"testovoe/internal/configs"
 
 	"github.com/redis/go-redis/v9"
+
+	"testovoe/internal/configs"
+	"testovoe/internal/logger"
 )
 
 // NewTaskCache создает TaskCache: пытается Redis, если не получается — fallback на InMemory
 func NewTaskCache(cfg configs.RedisConfig) TaskCache {
+	logger.Info("Creating task cache",
+		"redis_host", cfg.Host,
+		"redis_port", cfg.Port,
+		"redis_db", cfg.DB,
+	)
+
 	// Пытаемся подключиться к Redis
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.Host + ":" + cfg.Port,
@@ -20,11 +27,19 @@ func NewTaskCache(cfg configs.RedisConfig) TaskCache {
 	// Проверяем соединение
 	ctx := context.Background()
 	if err := rdb.Ping(ctx).Err(); err != nil {
-		log.Printf("Warning: Redis connection failed, using in-memory cache: %v", err)
+		logger.Error("Redis connection failed, falling back to in-memory cache", err,
+			"redis_host", cfg.Host,
+			"redis_port", cfg.Port,
+			"redis_db", cfg.DB,
+		)
 		_ = rdb.Close()
 		return NewTaskCacheInMemory()
 	}
 	
-	log.Println("Using Redis cache")
+	logger.Info("Using Redis cache",
+		"redis_host", cfg.Host,
+		"redis_port", cfg.Port,
+		"redis_db", cfg.DB,
+	)
 	return NewTaskCacheRedis(rdb)
 }
